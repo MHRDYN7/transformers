@@ -470,11 +470,11 @@ DINOV2_INPUTS_DOCSTRING = r"""
     DINOV2_START_DOCSTRING,
 )
 class Dinov2Model(Dinov2PreTrainedModel):
-    def __init__(self, config: Dinov2Config, add_pooling_layer: bool = True, use_mask_token: bool = False):
+    def __init__(self, config: Dinov2Config, add_pooling_layer: bool = True):
         super().__init__(config)
         self.config = config
 
-        self.embeddings = Dinov2Embeddings(config, use_mask_token=use_mask_token)
+        self.embeddings = Dinov2Embeddings(config)
         self.encoder = Dinov2Encoder(config)
 
         self.layernorm = nn.LayerNorm(config.hidden_size, eps=config.layer_norm_eps)
@@ -579,7 +579,6 @@ class Dinov2Pooler(nn.Module):
     """,
     DINOV2_START_DOCSTRING,
 )
-# Copied from transformers.models.vit.modeling_vit.ViTForImageClassification with VIT->DINOV2,ViT->Dinov2,vit->dinov2,ViTConfig->Dinov2Config
 class Dinov2ForImageClassification(Dinov2PreTrainedModel):
     def __init__(self, config: Dinov2Config) -> None:
         super().__init__(config)
@@ -607,7 +606,6 @@ class Dinov2ForImageClassification(Dinov2PreTrainedModel):
         labels: Optional[torch.Tensor] = None,
         output_attentions: Optional[bool] = None,
         output_hidden_states: Optional[bool] = None,
-        interpolate_pos_encoding: Optional[bool] = None,
         return_dict: Optional[bool] = None,
     ) -> Union[tuple, ImageClassifierOutput]:
         r"""
@@ -623,7 +621,6 @@ class Dinov2ForImageClassification(Dinov2PreTrainedModel):
             head_mask=head_mask,
             output_attentions=output_attentions,
             output_hidden_states=output_hidden_states,
-            interpolate_pos_encoding=interpolate_pos_encoding,
             return_dict=return_dict,
         )
 
