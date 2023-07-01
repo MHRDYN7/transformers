@@ -86,6 +86,7 @@ TF_MODEL_MAPPING_NAMES = OrderedDict(
         ("transfo-xl", "TFTransfoXLModel"),
         ("vision-text-dual-encoder", "TFVisionTextDualEncoderModel"),
         ("vit", "TFViTModel"),
+        ("dinov2", "TFDinov2Model"),
         ("vit_mae", "TFViTMAEModel"),
         ("wav2vec2", "TFWav2Vec2Model"),
         ("whisper", "TFWhisperModel"),
@@ -213,6 +214,7 @@ TF_MODEL_FOR_IMAGE_CLASSIFICATION_MAPPING_NAMES = OrderedDict(
         ("segformer", "TFSegformerForImageClassification"),
         ("swin", "TFSwinForImageClassification"),
         ("vit", "TFViTForImageClassification"),
+        ("dinov2", "TFDinov2ForImageClassification"),
     ]
 )
 
