@@ -17,7 +17,7 @@
 URL: https://github.com/facebookresearch/dinov2/tree/main
 """
 
-
+import time
 import argparse
 from pathlib import Path
 
@@ -81,6 +81,10 @@ def create_rename_keys(config):
         # attention projection layer
         rename_keys.append((f"blocks.{i}.attn.proj.weight", f"encoder.layer.{i}.attention.output.dense.weight"))
         rename_keys.append((f"blocks.{i}.attn.proj.bias", f"encoder.layer.{i}.attention.output.dense.bias"))
+
+    #Final layernorm
+    rename_keys.append(("norm.weight", "layernorm.weight"))
+    rename_keys.append(("norm.bias", "layernorm.bias"))
 
         # TODO attention qkv
 
@@ -180,7 +184,11 @@ def convert_dinov2_checkpoint(model_name, pytorch_dump_folder_path):
     with torch.no_grad():
         outputs = model(pixel_values)
 
-    print("Ouputs", outputs.last_hidden_state.shape)#final_hidden_state_cls_token = original_model(pixel_values)
+    last_hidden_state = outputs.last_hidden_state
+
+    print("Shape of final hidden  state:", last_hidden_state.shape)
+    print("Last values of final hidden state:", last_hidden_state[0,:3,:3])
+
     # TODO assert values
     #assert torch.allclose(final_hidden_state_cls_token, outputs.last_hidden_state[:, 0, :], atol=1e-1)
 

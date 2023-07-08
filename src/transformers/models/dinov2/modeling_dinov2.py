@@ -378,7 +378,6 @@ class Dinov2Layer(nn.Module):
         self.layer_scale2 = Dinov2LayerScale(config.hidden_size, init_values=config.layerscale_value)
         self.drop_path2 = Dinov2DropPath(config.drop_path_rate) if config.drop_path_rate > 0.0 else nn.Identity()
 
-
     def forward(
         self,
         hidden_states: torch.Tensor,
@@ -404,11 +403,8 @@ class Dinov2Layer(nn.Module):
         layer_output = layer_output + hidden_states
 
         outputs = (layer_output,) + outputs
-
-        return outputs
         
-          
-
+        return outputs    
 
 # Copied from transformers.models.vit.modeling_vit.ViTEncoder with ViT->Dinov2
 class Dinov2Encoder(nn.Module):
@@ -435,6 +431,9 @@ class Dinov2Encoder(nn.Module):
 
             layer_head_mask = head_mask[i] if head_mask is not None else None
 
+            if i == 11:
+                print("Hidden states before the first Transformer layer", hidden_states[0,:3,:3])
+
             if self.gradient_checkpointing and self.training:
 
                 def create_custom_forward(module):
@@ -452,6 +451,9 @@ class Dinov2Encoder(nn.Module):
                 layer_outputs = layer_module(hidden_states, layer_head_mask, output_attentions)
 
             hidden_states = layer_outputs[0]
+
+            if i == 11:
+                print("Hidden states after the first Transformer layer", hidden_states[0,:3,:3])
 
             if output_attentions:
                 all_self_attentions = all_self_attentions + (layer_outputs[1],)
