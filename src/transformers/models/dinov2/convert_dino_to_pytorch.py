@@ -17,7 +17,7 @@
 URL: https://github.com/facebookresearch/dinov2/tree/main
 """
 
-import time
+
 import argparse
 from pathlib import Path
 
@@ -37,7 +37,6 @@ logger = logging.get_logger(__name__)
 
 def get_dinov2_config(model_name):
     config = Dinov2Config(image_size=518, patch_size=14)
-    
     # size of the architecture
     if "vits" in model_name:
         raise NotImplementedError("To do")
@@ -52,7 +51,7 @@ def get_dinov2_config(model_name):
 
     return config    
 
-# here we list all keys to be renamed (original name on the left, our name on the right)
+
 def create_rename_keys(config):
     rename_keys = []
     # fmt: off
@@ -63,7 +62,6 @@ def create_rename_keys(config):
     rename_keys.append(("patch_embed.proj.weight", "embeddings.patch_embeddings.projection.weight"))
     rename_keys.append(("patch_embed.proj.bias", "embeddings.patch_embeddings.projection.bias"))
 
-    # transfromer blocks
     for i in range(config.num_hidden_layers):
         # layernorms
         rename_keys.append((f"blocks.{i}.norm1.weight", f"encoder.layer.{i}.norm1.weight"))
@@ -82,13 +80,10 @@ def create_rename_keys(config):
         rename_keys.append((f"blocks.{i}.attn.proj.weight", f"encoder.layer.{i}.attention.output.dense.weight"))
         rename_keys.append((f"blocks.{i}.attn.proj.bias", f"encoder.layer.{i}.attention.output.dense.bias"))
 
-    #Final layernorm
+    # final layernorm
     rename_keys.append(("norm.weight", "layernorm.weight"))
     rename_keys.append(("norm.bias", "layernorm.bias"))
-
-        # TODO attention qkv
-
-
+    
     # fmt: on
     return rename_keys
 
@@ -156,8 +151,8 @@ def convert_dinov2_checkpoint(model_name, pytorch_dump_folder_path):
     # load HuggingFace model
     model = Dinov2Model(config, add_pooling_layer=False).eval()
     missing_keys, unexpected_keys = model.load_state_dict(state_dict, strict=False)
-    print("Missing keys:", missing_keys)
-    print("Unexpected keys:", unexpected_keys)
+    assert len(missing_keys) == 0
+    assert unexpected_keys == ["mask_token"]
 
     # Check outputs on an image, prepared by ViTImageProcessor
     # processor = ViTImageProcessor()
@@ -174,29 +169,30 @@ def convert_dinov2_checkpoint(model_name, pytorch_dump_folder_path):
         transforms.CenterCrop(224),
         transforms.ToTensor(),
         transforms.Normalize(
-            mean=[0.485, 0.456, 0.406],
-            std=[0.229, 0.224, 0.225]
+            mean=[0.485, 0.456, 0.406],  # these are RGB mean+std values
+            std=[0.229, 0.224, 0.225]  # across a large photo dataset.
             )
     ])
 
-    pixel_values = transformations(image).unsqueeze(0)
+    pixel_values = transformations(image).unsqueeze(0)  # insert batch dimension
 
     with torch.no_grad():
         outputs = model(pixel_values)
 
     last_hidden_state = outputs.last_hidden_state
 
-    print("Shape of final hidden  state:", last_hidden_state.shape)
-    print("Last values of final hidden state:", last_hidden_state[0,:3,:3])
-
-    # TODO assert values
-    #assert torch.allclose(final_hidden_state_cls_token, outputs.last_hidden_state[:, 0, :], atol=1e-1)
+    #assert values
+    expected_slice = torch.Tensor([[-2.1849, -0.3433,  1.0913],
+        [-3.2696, -0.7386, -0.8044],
+        [-3.0603,  1.2498, -0.7685]])
+    assert torch.allclose(last_hidden_state[0,:3,:3], expected_slice, atol=1e-4)
+    print("Looks ok!")
 
     if pytorch_dump_folder_path is not None:
         Path(pytorch_dump_folder_path).mkdir(exist_ok=True)
-        print(f"Saving model {model_name} to {pytorch_dump_folder_path}")
+        # print(f"Saving model {model_name} to {pytorch_dump_folder_path}")
         model.save_pretrained(pytorch_dump_folder_path)
-        print(f"Saving image processor to {pytorch_dump_folder_path}")
+        # print(f"Saving image processor to {pytorch_dump_folder_path}")
         processor.save_pretrained(pytorch_dump_folder_path)
 
 
@@ -207,7 +203,7 @@ if __name__ == "__main__":
         "--model_name",
         default="dinov2_vitb14",
         type=str,
-        choices = ["dinov2_vits14", "dinov2_vitb14", "dinov2_vitl14", "dinov2_vitg14"],
+        choices=["dinov2_vits14", "dinov2_vitb14", "dinov2_vitl14", "dinov2_vitg14"],
         help="Name of the model you'd like to convert.",
     )
     parser.add_argument(

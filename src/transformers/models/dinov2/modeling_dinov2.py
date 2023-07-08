@@ -1,5 +1,5 @@
 # coding=utf-8
-# Copyright 2023 Google AI, Ross Wightman, The HuggingFace Inc. team. All rights reserved.
+# Copyright 2023 Meta AI and The HuggingFace Inc. team. All rights reserved.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -122,9 +122,6 @@ class Dinov2Embeddings(nn.Module):
 
         # add positional encoding to each token
         embeddings = embeddings + self.interpolate_pos_encoding(embeddings, height, width)
-
-        print("Shape of embeddings:", embeddings.shape)
-        print("First values of embeddings:", embeddings[0,:3,:3])
 
         embeddings = self.dropout(embeddings)
 
@@ -361,7 +358,6 @@ class Dinov2MLP(nn.Module):
         return hidden_state
 
 
-# Copied from transformers.models.vit.modeling_vit.ViTLayer with ViT->Dinov2
 class Dinov2Layer(nn.Module):
     """This corresponds to the Block class in the original implementation."""
 
@@ -431,8 +427,6 @@ class Dinov2Encoder(nn.Module):
 
             layer_head_mask = head_mask[i] if head_mask is not None else None
 
-            if i == 11:
-                print("Hidden states before the first Transformer layer", hidden_states[0,:3,:3])
 
             if self.gradient_checkpointing and self.training:
 
@@ -452,8 +446,6 @@ class Dinov2Encoder(nn.Module):
 
             hidden_states = layer_outputs[0]
 
-            if i == 11:
-                print("Hidden states after the first Transformer layer", hidden_states[0,:3,:3])
 
             if output_attentions:
                 all_self_attentions = all_self_attentions + (layer_outputs[1],)
