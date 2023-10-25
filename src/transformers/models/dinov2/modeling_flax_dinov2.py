@@ -593,7 +593,9 @@ FLAX_VISION_MODEL_DOCSTRING = """
 """
 
 overwrite_call_docstring(FlaxDinov2Model, FLAX_VISION_MODEL_DOCSTRING)
-append_replace_return_docstrings(FlaxDinov2Model, output_type=FlaxBaseModelOutputWithPooling, config_class=Dinov2Config)
+append_replace_return_docstrings(
+    FlaxDinov2Model, output_type=FlaxBaseModelOutputWithPooling, config_class=Dinov2Config
+)
 
 
 # Copied from transformers.models.vit.modeling_flax_vit.FlaxViTForImageClassificationModule with ViT->Dinov2,vit->dinov2,ViTConfig->Dinov2Config
@@ -645,8 +647,8 @@ class FlaxDinov2ForImageClassificationModule(nn.Module):
 
 @add_start_docstrings(
     """
-    Dinov2 Model transformer with an image classification head on top (a linear layer on top of the final hidden state of
-    the [CLS] token) e.g. for ImageNet.
+    Dinov2 Model transformer with an image classification head on top (a linear layer on top of the final hidden state
+    of the [CLS] token) e.g. for ImageNet.
     """,
     DINOV2_START_DOCSTRING,
 )

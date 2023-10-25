@@ -24,12 +24,10 @@ import torch.utils.checkpoint
 from torch import nn
 from torch.nn import BCEWithLogitsLoss, CrossEntropyLoss, MSELoss
 
-from ...activations import ACT2FN
 from ...modeling_outputs import (
     BaseModelOutput,
     BaseModelOutputWithPooling,
     ImageClassifierOutput,
-    MaskedImageModelingOutput,
 )
 from ...modeling_utils import PreTrainedModel
 from ...pytorch_utils import find_pruneable_heads_and_indices, prune_linear_layer
@@ -38,7 +36,6 @@ from ...utils import (
     add_start_docstrings,
     add_start_docstrings_to_model_forward,
     logging,
-    replace_return_docstrings,
 )
 from .configuration_dinov2 import Dinov2Config
 
@@ -61,7 +58,6 @@ DINOV2_PRETRAINED_MODEL_ARCHIVE_LIST = [
     "facebook/dinov2-base",
     # See all DINOv2 models at https://huggingface.co/models?filter=dinov2
 ]
-
 
 
 class Dinov2Embeddings(nn.Module):
@@ -111,7 +107,7 @@ class Dinov2Embeddings(nn.Module):
         assert int(h0) == patch_pos_embed.shape[-2] and int(w0) == patch_pos_embed.shape[-1]
         patch_pos_embed = patch_pos_embed.permute(0, 2, 3, 1).view(1, -1, dim)
         return torch.cat((class_pos_embed.unsqueeze(0), patch_pos_embed), dim=1)
-    
+
     def forward(self, pixel_values: torch.Tensor) -> torch.Tensor:
         batch_size, _, height, width = pixel_values.shape
         embeddings = self.patch_embeddings(pixel_values)
@@ -300,6 +296,7 @@ class Dinov2LayerScale(nn.Module):
 def drop_path(input: torch.Tensor, drop_prob: float = 0.0, training: bool = False) -> torch.Tensor:
     """
     Drop paths (Stochastic Depth) per sample (when applied in main path of residual blocks).
+
     Comment by Ross Wightman: This is the same as the DropConnect impl I created for EfficientNet, etc networks,
     however, the original name is misleading as 'Drop Connect' is a different form of dropout in a separate paper...
     See discussion: https://github.com/tensorflow/tpu/issues/494#issuecomment-532968956 ... I've opted for changing the
@@ -317,19 +314,18 @@ def drop_path(input: torch.Tensor, drop_prob: float = 0.0, training: bool = Fals
 
 
 # Copied from transformers.models.beit.modeling_beit.BeitDropPath
-class Dinov2DropPath():
+class Dinov2DropPath:
     """Drop paths (Stochastic Depth) per sample (when applied in main path of residual blocks)."""
 
     def __init__(self, drop_prob: Optional[float] = None) -> None:
         super().__init__()
         self.drop_prob = drop_prob
 
-    
     def forward(self, hidden_states: torch.Tensor) -> torch.Tensor:
         return drop_path(hidden_states, self.drop_prob, self.training)
 
     def extra_repr(self) -> str:
-        return "p={}".format(self.drop_prob)    
+        return "p={}".format(self.drop_prob)
 
 
 class Dinov2MLP(nn.Module):
@@ -363,6 +359,7 @@ class Dinov2Layer(nn.Module):
 
     def __init__(self, config: Dinov2Config) -> None:
         super().__init__()
+
         self.norm1 = nn.LayerNorm(config.hidden_size, eps=config.layer_norm_eps)
         self.attention = Dinov2Attention(config)
         self.layer_scale1 = Dinov2LayerScale(config.hidden_size, init_values=config.layerscale_value)
@@ -381,9 +378,12 @@ class Dinov2Layer(nn.Module):
         output_attentions: bool = False,
     ) -> Union[Tuple[torch.Tensor, torch.Tensor], Tuple[torch.Tensor]]:
         self_attention_outputs = self.attention(
-            self.norm1(hidden_states)  # in Dinov2, layernorm is applied before self-attention
+            self.norm1(hidden_states),  # in Dinov2, layernorm is applied before self-attention
+            head_mask,
+            output_attentions=output_attentions,
         )
         attention_output = self_attention_outputs[0]
+
         attention_output = self.layer_scale1(attention_output)
         outputs = self_attention_outputs[1:]  # add self attentions if we output attention weights
 
@@ -399,8 +399,9 @@ class Dinov2Layer(nn.Module):
         layer_output = layer_output + hidden_states
 
         outputs = (layer_output,) + outputs
-        
-        return outputs    
+
+        return outputs
+
 
 # Copied from transformers.models.vit.modeling_vit.ViTEncoder with ViT->Dinov2
 class Dinov2Encoder(nn.Module):
@@ -427,7 +428,6 @@ class Dinov2Encoder(nn.Module):
 
             layer_head_mask = head_mask[i] if head_mask is not None else None
 
-
             if self.gradient_checkpointing and self.training:
 
                 def create_custom_forward(module):
@@ -445,7 +445,6 @@ class Dinov2Encoder(nn.Module):
                 layer_outputs = layer_module(hidden_states, layer_head_mask, output_attentions)
 
             hidden_states = layer_outputs[0]
-
 
             if output_attentions:
                 all_self_attentions = all_self_attentions + (layer_outputs[1],)
@@ -548,6 +547,7 @@ class Dinov2Model(Dinov2PreTrainedModel):
     def __init__(self, config: Dinov2Config, add_pooling_layer: bool = True):
         super().__init__(config)
         self.config = config
+
         self.embeddings = Dinov2Embeddings(config)
         self.encoder = Dinov2Encoder(config)
 
@@ -648,8 +648,8 @@ class Dinov2Pooler(nn.Module):
 
 @add_start_docstrings(
     """
-    Dinov2 Model transformer with an image classification head on top (a linear layer on top of the final hidden state of
-    the [CLS] token) e.g. for ImageNet.
+    Dinov2 Model transformer with an image classification head on top (a linear layer on top of the final hidden state
+    of the [CLS] token) e.g. for ImageNet.
     """,
     DINOV2_START_DOCSTRING,
 )

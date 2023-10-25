@@ -25,7 +25,13 @@ import torch
 from huggingface_hub import hf_hub_download
 from PIL import Image
 
-from transformers import DeiTFeatureExtractor, Dinov2Config, ViTFeatureExtractor, Dinov2ForImageClassification, Dinov2Model
+from transformers import (
+    DeiTFeatureExtractor,
+    Dinov2Config,
+    Dinov2ForImageClassification,
+    Dinov2Model,
+    ViTFeatureExtractor,
+)
 from transformers.utils import logging
 
 

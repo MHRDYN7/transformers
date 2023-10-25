@@ -38,7 +38,7 @@ if is_torch_available():
     import torch
     from torch import nn
 
-    from transformers import Dinov2ForImageClassification, Dinov2ForMaskedImageModeling, Dinov2Model
+    from transformers import Dinov2ForImageClassification, Dinov2Model
     from transformers.models.dinov2.modeling_dinov2 import DINOV2_PRETRAINED_MODEL_ARCHIVE_LIST
 
 
@@ -128,25 +128,6 @@ class Dinov2ModelTester:
         result = model(pixel_values)
         self.parent.assertEqual(result.last_hidden_state.shape, (self.batch_size, self.seq_length, self.hidden_size))
 
-    def create_and_check_for_masked_image_modeling(self, config, pixel_values, labels):
-        model = Dinov2ForMaskedImageModeling(config=config)
-        model.to(torch_device)
-        model.eval()
-        result = model(pixel_values)
-        self.parent.assertEqual(
-            result.reconstruction.shape, (self.batch_size, self.num_channels, self.image_size, self.image_size)
-        )
-
-        # test greyscale images
-        config.num_channels = 1
-        model = Dinov2ForMaskedImageModeling(config)
-        model.to(torch_device)
-        model.eval()
-
-        pixel_values = floats_tensor([self.batch_size, 1, self.image_size, self.image_size])
-        result = model(pixel_values)
-        self.parent.assertEqual(result.reconstruction.shape, (self.batch_size, 1, self.image_size, self.image_size))
-
     def create_and_check_for_image_classification(self, config, pixel_values, labels):
         config.num_labels = self.type_sequence_label_size
         model = Dinov2ForImageClassification(config)
@@ -187,7 +168,6 @@ class Dinov2ModelTest(ModelTesterMixin, PipelineTesterMixin, unittest.TestCase):
         (
             Dinov2Model,
             Dinov2ForImageClassification,
-            Dinov2ForMaskedImageModeling,
         )
         if is_torch_available()
         else ()
