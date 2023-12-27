@@ -1,3 +1,4 @@
+"""
 # coding=utf-8
 # Copyright 2023 The HuggingFace Inc. team. All rights reserved.
 #
@@ -12,7 +13,9 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
+"""
 """ Testing suite for the TensorFlow Dinov2 model. """
+"""
 
 
 from __future__ import annotations
@@ -152,11 +155,12 @@ class TFDinov2ModelTester:
 
 @require_tf
 class TFDinov2ModelTest(TFModelTesterMixin, PipelineTesterMixin, unittest.TestCase):
-    """
+"""
+"""
     Here we also overwrite some of the tests of test_modeling_tf_common.py, as Dinov2 does not use input_ids, inputs_embeds,
     attention_mask and seq_length.
-    """
-
+"""
+"""
     all_model_classes = (TFDinov2Model, TFDinov2ForImageClassification) if is_tf_available() else ()
 
     test_resize_embeddings = False
@@ -244,3 +248,5 @@ class TFDinov2ModelIntegrationTest(unittest.TestCase):
         expected_slice = tf.constant([-0.2744, 0.8215, -0.0836])
 
         tf.debugging.assert_near(outputs.logits[0, :3], expected_slice, atol=1e-4)
+
+"""

@@ -36,7 +36,6 @@ FLAX_MODEL_MAPPING_NAMES = OrderedDict(
         ("blenderbot", "FlaxBlenderbotModel"),
         ("blenderbot-small", "FlaxBlenderbotSmallModel"),
         ("clip", "FlaxCLIPModel"),
-        ("dinov2", "FlaxDinov2Model"),
         ("distilbert", "FlaxDistilBertModel"),
         ("electra", "FlaxElectraModel"),
         ("gpt-sw3", "FlaxGPT2Model"),
@@ -122,7 +121,6 @@ FLAX_MODEL_FOR_IMAGE_CLASSIFICATION_MAPPING_NAMES = OrderedDict(
     [
         # Model for Image-classsification
         ("beit", "FlaxBeitForImageClassification"),
-        ("dinov2", "FlaxDinov2ForImageClassification"),
         ("regnet", "FlaxRegNetForImageClassification"),
         ("resnet", "FlaxResNetForImageClassification"),
         ("vit", "FlaxViTForImageClassification"),

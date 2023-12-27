@@ -1,3 +1,4 @@
+"""
 # Copyright 2023 The HuggingFace Team. All rights reserved.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
@@ -185,3 +186,4 @@ class FlaxDinov2ModelTest(FlaxModelTesterMixin, unittest.TestCase):
             model = model_class_name.from_pretrained("google/dinov2-base-patch16-224")
             outputs = model(np.ones((1, 3, 224, 224)))
             self.assertIsNotNone(outputs)
+"""

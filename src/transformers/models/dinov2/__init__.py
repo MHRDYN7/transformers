@@ -16,8 +16,6 @@ from typing import TYPE_CHECKING
 from ...utils import (
     OptionalDependencyNotAvailable,
     _LazyModule,
-    is_flax_available,
-    is_tf_available,
     is_torch_available,
 )
 
@@ -39,30 +37,6 @@ else:
         "Dinov2PreTrainedModel",
     ]
 
-try:
-    if not is_tf_available():
-        raise OptionalDependencyNotAvailable()
-except OptionalDependencyNotAvailable:
-    pass
-else:
-    _import_structure["modeling_tf_dinov2"] = [
-        "TFDinov2ForImageClassification",
-        "TFDinov2Model",
-        "TFDinov2PreTrainedModel",
-    ]
-
-try:
-    if not is_flax_available():
-        raise OptionalDependencyNotAvailable()
-except OptionalDependencyNotAvailable:
-    pass
-else:
-    _import_structure["modeling_flax_dinov2"] = [
-        "FlaxDinov2ForImageClassification",
-        "FlaxDinov2Model",
-        "FlaxDinov2PreTrainedModel",
-    ]
-
 if TYPE_CHECKING:
     from .configuration_dinov2 import DINOV2_PRETRAINED_CONFIG_ARCHIVE_MAP, Dinov2Config, Dinov2OnnxConfig
 
@@ -78,23 +52,6 @@ if TYPE_CHECKING:
             Dinov2Model,
             Dinov2PreTrainedModel,
         )
-
-    try:
-        if not is_tf_available():
-            raise OptionalDependencyNotAvailable()
-    except OptionalDependencyNotAvailable:
-        pass
-    else:
-        from .modeling_tf_dinov2 import TFDinov2ForImageClassification, TFDinov2Model, TFDinov2PreTrainedModel
-
-    try:
-        if not is_flax_available():
-            raise OptionalDependencyNotAvailable()
-    except OptionalDependencyNotAvailable:
-        pass
-    else:
-        from .modeling_flax_dinov2 import FlaxDinov2ForImageClassification, FlaxDinov2Model, FlaxDinov2PreTrainedModel
-
 
 else:
     import sys
