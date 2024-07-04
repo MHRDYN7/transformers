@@ -589,6 +589,8 @@
         title: DINOV2
       - local: model_doc/dit
         title: DiT
+      - local: model_doc/dnv2
+        title: Dnv2
       - local: model_doc/dpt
         title: DPT
       - local: model_doc/efficientformer

@@ -73,6 +73,7 @@ from . import (
     dinov2,
     distilbert,
     dit,
+    dnv2,
     donut,
     dpr,
     dpt,

@@ -751,6 +751,7 @@ _import_structure = {
     ],
     "models.visual_bert": ["VisualBertConfig"],
     "models.vit": ["ViTConfig"],
+    "models.dnv2": ["Dnv2Config"],
     "models.vit_mae": ["ViTMAEConfig"],
     "models.vit_msn": ["ViTMSNConfig"],
     "models.vitdet": ["VitDetConfig"],
@@ -3339,6 +3340,13 @@ else:
             "ViTPreTrainedModel",
         ]
     )
+    _import_structure["models.dnv2"].extend(
+        [
+            "Dnv2ForImageClassification",
+            "Dnv2Model",
+            "Dnv2PreTrainedModel",
+        ]
+    )
     _import_structure["models.vit_mae"].extend(
         [
             "ViTMAEForPreTraining",
@@ -4961,6 +4969,7 @@ if TYPE_CHECKING:
         DistilBertConfig,
         DistilBertTokenizer,
     )
+    from .models.dnv2 import Dnv2Config
     from .models.donut import (
         DonutProcessor,
         DonutSwinConfig,
@@ -6478,6 +6487,11 @@ if TYPE_CHECKING:
             DistilBertForTokenClassification,
             DistilBertModel,
             DistilBertPreTrainedModel,
+        )
+        from .models.dnv2 import (
+            Dnv2ForImageClassification,
+            Dnv2Model,
+            Dnv2PreTrainedModel,
         )
         from .models.donut import (
             DonutSwinModel,
