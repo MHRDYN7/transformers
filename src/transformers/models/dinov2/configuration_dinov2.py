@@ -128,6 +128,9 @@ class Dinov2Config(BackboneConfigMixin, PretrainedConfig):
         out_indices=None,
         apply_layernorm=True,
         reshape_hidden_states=True,
+        num_register_tokens=0,
+        interpolate_antialias=False,
+        interpolate_offset=0.1,
         **kwargs,
     ):
         super().__init__(**kwargs)
@@ -154,6 +157,9 @@ class Dinov2Config(BackboneConfigMixin, PretrainedConfig):
         )
         self.apply_layernorm = apply_layernorm
         self.reshape_hidden_states = reshape_hidden_states
+        self.num_register_tokens = num_register_tokens
+        self.interpolate_antialias = interpolate_antialias
+        self.interpolate_offset = interpolate_offset
 
 
 class Dinov2OnnxConfig(OnnxConfig):

@@ -72,8 +72,46 @@ class Dinov2Embeddings(nn.Module):
         self.position_embeddings = nn.Parameter(torch.randn(1, num_patches + 1, config.hidden_size))
         self.dropout = nn.Dropout(config.hidden_dropout_prob)
         self.config = config
+        self.num_register_tokens = config.num_register_tokens
+        self.register_tokens = nn.Parameter(torch.zeros(1, self.num_register_tokens, config.hidden_size)) if self.num_register_tokens else None    #ToDo Register mention 0
+        
 
-    def interpolate_pos_encoding(self, embeddings: torch.Tensor, height: int, width: int) -> torch.Tensor:
+    # def interpolate_pos_encoding(self, embeddings: torch.Tensor, height: int, width: int) -> torch.Tensor:
+    #     """
+    #     This method allows to interpolate the pre-trained position encodings, to be able to use the model on higher
+    #     resolution images.
+
+    #     Source:
+    #     https://github.com/facebookresearch/dino/blob/de9ee3df6cf39fac952ab558447af1fa1365362a/vision_transformer.py#L174
+    #     """
+
+    #     num_patches = embeddings.shape[1] - 1
+    #     num_positions = self.position_embeddings.shape[1] - 1
+    #     if num_patches == num_positions and height == width:
+    #         return self.position_embeddings
+    #     class_pos_embed = self.position_embeddings[:, 0]
+    #     patch_pos_embed = self.position_embeddings[:, 1:]
+    #     dim = embeddings.shape[-1]
+    #     height = height // self.config.patch_size
+    #     width = width // self.config.patch_size
+    #     # we add a small number to avoid floating point error in the interpolation
+    #     # see discussion at https://github.com/facebookresearch/dino/issues/8
+    #     height, width = height + 0.1, width + 0.1
+    #     patch_pos_embed = patch_pos_embed.reshape(1, int(math.sqrt(num_positions)), int(math.sqrt(num_positions)), dim)
+    #     patch_pos_embed = patch_pos_embed.permute(0, 3, 1, 2)
+    #     target_dtype = patch_pos_embed.dtype
+    #     patch_pos_embed = nn.functional.interpolate(
+    #         patch_pos_embed.to(dtype=torch.float32),
+    #         scale_factor=(float(height / math.sqrt(num_positions)), float(width / math.sqrt(num_positions))),
+    #         mode="bicubic",
+    #         align_corners=False,
+    #     ).to(dtype=target_dtype)
+    #     if int(height) != patch_pos_embed.shape[-2] or int(width) != patch_pos_embed.shape[-1]:
+    #         raise ValueError("Width or height does not match with the interpolated position embeddings")
+    #     patch_pos_embed = patch_pos_embed.permute(0, 2, 3, 1).view(1, -1, dim)
+    #     return torch.cat((class_pos_embed.unsqueeze(0), patch_pos_embed), dim=1)
+
+    def interpolate_pos_encoding(self, embeddings: torch.Tensor, width: int, height: int) -> torch.Tensor:
         """
         This method allows to interpolate the pre-trained position encodings, to be able to use the model on higher
         resolution images.
@@ -82,31 +120,43 @@ class Dinov2Embeddings(nn.Module):
         https://github.com/facebookresearch/dino/blob/de9ee3df6cf39fac952ab558447af1fa1365362a/vision_transformer.py#L174
         """
 
+        previous_dtype = embeddings.dtype
         num_patches = embeddings.shape[1] - 1
         num_positions = self.position_embeddings.shape[1] - 1
         if num_patches == num_positions and height == width:
             return self.position_embeddings
-        class_pos_embed = self.position_embeddings[:, 0]
-        patch_pos_embed = self.position_embeddings[:, 1:]
+        pos_embed = self.position_embeddings.float()
+        class_pos_embed = pos_embed[:, 0]
+        patch_pos_embed = pos_embed[:, 1:]
         dim = embeddings.shape[-1]
-        height = height // self.config.patch_size
         width = width // self.config.patch_size
+        height = height // self.config.patch_size
+        M = int(math.sqrt(num_positions))
+        assert num_positions == M * M
+        kwargs = {}
         # we add a small number to avoid floating point error in the interpolation
         # see discussion at https://github.com/facebookresearch/dino/issues/8
-        height, width = height + 0.1, width + 0.1
-        patch_pos_embed = patch_pos_embed.reshape(1, int(math.sqrt(num_positions)), int(math.sqrt(num_positions)), dim)
-        patch_pos_embed = patch_pos_embed.permute(0, 3, 1, 2)
-        target_dtype = patch_pos_embed.dtype
+        if self.config.interpolate_offset:
+            width_scale_factor = float(width + self.config.interpolate_offset) / M
+            height_scale_factor = float(height + self.config.interpolate_offset) / M
+            kwargs["scale_factor"] = (width_scale_factor, height_scale_factor)
+        else:
+            kwargs["size"] = (width, height)
+
         patch_pos_embed = nn.functional.interpolate(
-            patch_pos_embed.to(dtype=torch.float32),
-            scale_factor=(float(height / math.sqrt(num_positions)), float(width / math.sqrt(num_positions))),
+            patch_pos_embed.reshape(1, M, M, dim).permute(0, 3, 1, 2).to(dtype=torch.float32),
             mode="bicubic",
-            align_corners=False,
-        ).to(dtype=target_dtype)
-        if int(height) != patch_pos_embed.shape[-2] or int(width) != patch_pos_embed.shape[-1]:
-            raise ValueError("Width or height does not match with the interpolated position embeddings")
+            antialias=self.config.interpolate_antialias,
+            **kwargs,
+        )#.to(dtype=target_dtype)
+
+        assert (height, width) == patch_pos_embed.shape[-2:]  
         patch_pos_embed = patch_pos_embed.permute(0, 2, 3, 1).view(1, -1, dim)
-        return torch.cat((class_pos_embed.unsqueeze(0), patch_pos_embed), dim=1)
+        return torch.cat((class_pos_embed.unsqueeze(0), patch_pos_embed), dim=1).to(previous_dtype)
+
+
+
+
 
     def forward(self, pixel_values: torch.Tensor, bool_masked_pos: Optional[torch.Tensor] = None) -> torch.Tensor:
         batch_size, _, height, width = pixel_values.shape
@@ -126,7 +176,17 @@ class Dinov2Embeddings(nn.Module):
         embeddings = embeddings + self.interpolate_pos_encoding(embeddings, height, width)
 
         embeddings = self.dropout(embeddings)
+        
 
+        if self.register_tokens is not None:
+            embeddings = torch.cat(
+                (
+                    embeddings[:,:1],
+                    self.register_tokens.expand(batch_size, -1, -1),
+                    embeddings[:,1:],
+                ),
+                dim=1,
+            )
         return embeddings
 
 
@@ -184,7 +244,7 @@ class Dinov2SelfAttention(nn.Module):
         self.dropout = nn.Dropout(config.attention_probs_dropout_prob)
 
     def transpose_for_scores(self, x: torch.Tensor) -> torch.Tensor:
-        new_x_shape = x.size()[:-1] + (self.num_attention_heads, self.attention_head_size)
+        new_x_shape = x.size()[:-1] + (self.num_attention_heads, self.attention_head_size)  
         x = x.view(new_x_shape)
         return x.permute(0, 2, 1, 3)
 
@@ -192,18 +252,18 @@ class Dinov2SelfAttention(nn.Module):
         self, hidden_states, head_mask: Optional[torch.Tensor] = None, output_attentions: bool = False
     ) -> Union[Tuple[torch.Tensor, torch.Tensor], Tuple[torch.Tensor]]:
         mixed_query_layer = self.query(hidden_states)
-
-        key_layer = self.transpose_for_scores(self.key(hidden_states))
-        value_layer = self.transpose_for_scores(self.value(hidden_states))
-        query_layer = self.transpose_for_scores(mixed_query_layer)
+        
+        key_layer = self.transpose_for_scores(self.key(hidden_states))  
+        value_layer = self.transpose_for_scores(self.value(hidden_states)) 
+        query_layer = self.transpose_for_scores(mixed_query_layer)         
 
         # Take the dot product between "query" and "key" to get the raw attention scores.
-        attention_scores = torch.matmul(query_layer, key_layer.transpose(-1, -2))
+        attention_scores = torch.matmul(query_layer, key_layer.transpose(-1, -2))   
 
-        attention_scores = attention_scores / math.sqrt(self.attention_head_size)
+        attention_scores = attention_scores / math.sqrt(self.attention_head_size)   
 
         # Normalize the attention scores to probabilities.
-        attention_probs = nn.functional.softmax(attention_scores, dim=-1)
+        attention_probs = attention_scores.softmax(dim=-1)                          
 
         # This is actually dropping out entire tokens to attend to, which might
         # seem a bit unusual, but is taken from the original Transformer paper.
@@ -213,7 +273,7 @@ class Dinov2SelfAttention(nn.Module):
         if head_mask is not None:
             attention_probs = attention_probs * head_mask
 
-        context_layer = torch.matmul(attention_probs, value_layer)
+        context_layer = torch.matmul(attention_probs, value_layer)                  
 
         context_layer = context_layer.permute(0, 2, 1, 3).contiguous()
         new_context_layer_shape = context_layer.size()[:-2] + (self.all_head_size,)
@@ -490,7 +550,7 @@ class Dinov2PreTrainedModel(PreTrainedModel):
             if module.bias is not None:
                 module.bias.data.zero_()
         elif isinstance(module, nn.LayerNorm):
-            module.bias.data.zero_()
+            module.bias.data.zero_()          
             module.weight.data.fill_(1.0)
         elif isinstance(module, Dinov2Embeddings):
             module.position_embeddings.data = nn.init.trunc_normal_(
@@ -499,10 +559,17 @@ class Dinov2PreTrainedModel(PreTrainedModel):
                 std=self.config.initializer_range,
             ).to(module.position_embeddings.dtype)
 
-            module.cls_token.data = nn.init.trunc_normal_(
+            module.cls_token.data = nn.init.normal_(   
                 module.cls_token.data.to(torch.float32),
                 mean=0.0,
                 std=self.config.initializer_range,
+            ).to(module.cls_token.dtype)
+
+            if self.config.num_register_tokens > 0:
+                module.register_tokens.data = nn.init.normal_(
+                    module.register_tokens.data.to(torch.float32),
+                    mean=0.0,
+                    std=1e-6,
             ).to(module.cls_token.dtype)
 
 
@@ -709,7 +776,7 @@ class Dinov2ForImageClassification(Dinov2PreTrainedModel):
         sequence_output = outputs[0]  # batch_size, sequence_length, hidden_size
 
         cls_token = sequence_output[:, 0]
-        patch_tokens = sequence_output[:, 1:]
+        patch_tokens = sequence_output[:, self.config.num_register_tokens+1:]
 
         linear_input = torch.cat([cls_token, patch_tokens.mean(dim=1)], dim=1)
 
@@ -830,7 +897,7 @@ class Dinov2Backbone(Dinov2PreTrainedModel, BackboneMixin):
                 if self.config.apply_layernorm:
                     hidden_state = self.layernorm(hidden_state)
                 if self.config.reshape_hidden_states:
-                    hidden_state = hidden_state[:, 1:]
+                    hidden_state = hidden_state[:, self.config.num_register_tokens + 1:]
                     # this was actually a bug in the original implementation that we copied here,
                     # cause normally the order is height, width
                     batch_size, _, height, width = pixel_values.shape

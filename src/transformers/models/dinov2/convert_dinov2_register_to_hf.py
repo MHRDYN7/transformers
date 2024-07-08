@@ -40,6 +40,11 @@ logger = logging.get_logger(__name__)
 def get_dinov2_config(model_name, image_classifier=False):
     config = Dinov2Config(image_size=518, patch_size=14)
 
+    if "reg" in model_name:
+        config.num_register_tokens = 4
+        config.interpolate_antialias=True,
+        config.interpolate_offset=0.0,
+
     # size of the architecture
     if "vits" in model_name:
         config.hidden_size = 384
@@ -58,7 +63,7 @@ def get_dinov2_config(model_name, image_classifier=False):
     else:
         raise ValueError("Model not supported")
 
-    if image_classifier:
+    if image_classifier:                           # ! NTI
         repo_id = "huggingface/label-files"
         filename = "imagenet-1k-id2label.json"
         config.num_labels = 1000
@@ -78,6 +83,9 @@ def create_rename_keys(config):
     rename_keys.append(("pos_embed", "embeddings.position_embeddings"))
     rename_keys.append(("patch_embed.proj.weight", "embeddings.patch_embeddings.projection.weight"))
     rename_keys.append(("patch_embed.proj.bias", "embeddings.patch_embeddings.projection.bias"))
+    # register tokens
+    if config.num_register_tokens > 0:
+        rename_keys.append(("register_tokens", "embeddings.register_tokens"))
 
     for i in range(config.num_hidden_layers):
         # layernorms
@@ -143,21 +151,22 @@ def prepare_img():
 
 
 @torch.no_grad()
-def convert_dinov2_checkpoint(model_name, pytorch_dump_folder_path, push_to_hub=False):
+def convert_dinov2_checkpoint(model_name=None, pytorch_dump_folder_path=None, push_to_hub=False):
     """
     Copy/paste/tweak model's weights to our DINOv2 structure.
     """
-
+    
     # define default Dinov2 configuration
     image_classifier = "1layer" in model_name
     config = get_dinov2_config(model_name, image_classifier=image_classifier)
-
+    
     # load original model from torch hub
     original_model = torch.hub.load("facebookresearch/dinov2", model_name.replace("_1layer", ""))
     original_model.eval()
 
     # load state_dict of original model, remove and rename some keys
     state_dict = original_model.state_dict()
+    
     rename_keys = create_rename_keys(config)
     for src, dest in rename_keys:
         rename_key(state_dict, src, dest)
@@ -180,6 +189,10 @@ def convert_dinov2_checkpoint(model_name, pytorch_dump_folder_path, push_to_hub=
             "dinov2_vitb14_1layer": "https://dl.fbaipublicfiles.com/dinov2/dinov2_vitb14/dinov2_vitb14_linear_head.pth",
             "dinov2_vitl14_1layer": "https://dl.fbaipublicfiles.com/dinov2/dinov2_vitl14/dinov2_vitl14_linear_head.pth",
             "dinov2_vitg14_1layer": "https://dl.fbaipublicfiles.com/dinov2/dinov2_vitg14/dinov2_vitg14_linear_head.pth",
+            "dinov2_vits14_reg_1layer": "https://dl.fbaipublicfiles.com/dinov2/dinov2_vits14/dinov2_vits14_reg4_linear_head.pth",
+            "dinov2_vitb14_reg_1layer": "https://dl.fbaipublicfiles.com/dinov2/dinov2_vitb14/dinov2_vitb14_reg4_linear_head.pth",
+            "dinov2_vitl14_reg_1layer": "https://dl.fbaipublicfiles.com/dinov2/dinov2_vitl14/dinov2_vitl14_reg4_linear_head.pth",
+            "dinov2_vitg14_reg_1layer": "https://dl.fbaipublicfiles.com/dinov2/dinov2_vitg14/dinov2_vitg14_reg4_linear_head.pth",
         }
         url = model_name_to_classifier_dict_url[model_name]
         classifier_state_dict = torch.hub.load_state_dict_from_url(url, map_location="cpu")
@@ -228,6 +241,8 @@ def convert_dinov2_checkpoint(model_name, pytorch_dump_folder_path, push_to_hub=
         print(model.config.id2label[class_idx])
     else:
         assert outputs.last_hidden_state[:, 0].shape == original_outputs.shape
+        #print(outputs.last_hidden_state[0,0,:10])
+        #print(original_outputs[0,:10])
         assert torch.allclose(outputs.last_hidden_state[:, 0], original_outputs, atol=1e-3)
     print("Looks ok!")
 
@@ -244,23 +259,15 @@ def convert_dinov2_checkpoint(model_name, pytorch_dump_folder_path, push_to_hub=
             "dinov2_vitb14": "dinov2-base",
             "dinov2_vitl14": "dinov2-large",
             "dinov2_vitg14": "dinov2-giant",
-            "dinov2_vits14_reg": "dino-small-register",
-            "dinov2_vitb14_reg": "dino-base-register",
-            "dinov2_vitl14_reg": "dino-large-register",
-            "dinov2_vitg14_reg": "dino-giant-register",
             "dinov2_vits14_1layer": "dinov2-small-imagenet1k-1-layer",
             "dinov2_vitb14_1layer": "dinov2-base-imagenet1k-1-layer",
             "dinov2_vitl14_1layer": "dinov2-large-imagenet1k-1-layer",
             "dinov2_vitg14_1layer": "dinov2-giant-imagenet1k-1-layer",
-            "dinov2_vits14_reg_1layer": "dino-small-register-imagenet1k-1-layer",
-            "dinov2_vitb14_reg_1layer": "dino-base-register-imagenet1k-1-layer",
-            "dinov2_vitl14_reg_1layer": "dino-large-register-imagenet1k-1-layer",
-            "dinov2_vitg14_reg_1layer": "dino-giant-register-imagenet1k-1-layer",
         }
 
         name = model_name_to_hf_name[model_name]
-        model.push_to_hub(f"MHRDYN7/{name}")
-        processor.push_to_hub(f"MHRDYN7/{name}")
+        model.push_to_hub(f"facebook/{name}")
+        processor.push_to_hub(f"facebook/{name}")
 
 
 if __name__ == "__main__":
@@ -275,10 +282,18 @@ if __name__ == "__main__":
             "dinov2_vitb14",
             "dinov2_vitl14",
             "dinov2_vitg14",
+            "dinov2_vits14_reg",
+            "dinov2_vitb14_reg",
+            "dinov2_vitl14_reg",
+            "dinov2_vitg14_reg",
             "dinov2_vits14_1layer",
             "dinov2_vitb14_1layer",
             "dinov2_vitl14_1layer",
             "dinov2_vitg14_1layer",
+            "dinov2_vits14_reg_1layer",
+            "dinov2_vitb14_reg_1layer",
+            "dinov2_vitl14_reg_1layer",
+            "dinov2_vitg14_reg_1layer",
         ],
         help="Name of the model you'd like to convert.",
     )
