@@ -42,8 +42,8 @@ def get_dinov2_config(model_name, image_classifier=False):
 
     if "reg" in model_name:
         config.num_register_tokens = 4
-        config.interpolate_antialias=True,
-        config.interpolate_offset=0.0,
+        config.interpolate_antialias=True
+        config.interpolate_offset=0
 
     # size of the architecture
     if "vits" in model_name:
@@ -63,7 +63,7 @@ def get_dinov2_config(model_name, image_classifier=False):
     else:
         raise ValueError("Model not supported")
 
-    if image_classifier:                           # ! NTI
+    if image_classifier:                        
         repo_id = "huggingface/label-files"
         filename = "imagenet-1k-id2label.json"
         config.num_labels = 1000
@@ -241,8 +241,6 @@ def convert_dinov2_checkpoint(model_name=None, pytorch_dump_folder_path=None, pu
         print(model.config.id2label[class_idx])
     else:
         assert outputs.last_hidden_state[:, 0].shape == original_outputs.shape
-        #print(outputs.last_hidden_state[0,0,:10])
-        #print(original_outputs[0,:10])
         assert torch.allclose(outputs.last_hidden_state[:, 0], original_outputs, atol=1e-3)
     print("Looks ok!")
 
@@ -259,10 +257,18 @@ def convert_dinov2_checkpoint(model_name=None, pytorch_dump_folder_path=None, pu
             "dinov2_vitb14": "dinov2-base",
             "dinov2_vitl14": "dinov2-large",
             "dinov2_vitg14": "dinov2-giant",
+            "dinov2_vits14_reg": "dinov2-small-register",
+            "dinov2_vitb14_reg": "dinov2-base-register",
+            "dinov2_vitl14_reg": "dinov2-large-register",
+            "dinov2_vitg14_reg": "dinov2-giant-register",
             "dinov2_vits14_1layer": "dinov2-small-imagenet1k-1-layer",
             "dinov2_vitb14_1layer": "dinov2-base-imagenet1k-1-layer",
             "dinov2_vitl14_1layer": "dinov2-large-imagenet1k-1-layer",
             "dinov2_vitg14_1layer": "dinov2-giant-imagenet1k-1-layer",
+            "dinov2_vits14_reg_1layer": "dinov2-small-register-imagenet1k-1-layer",
+            "dinov2_vitb14_reg_1layer": "dinov2-base-register-imagenet1k-1-layer",
+            "dinov2_vitl14_reg_1layer": "dinov2-large-register-imagenet1k-1-layer",
+            "dinov2_vitg14_reg_1layer": "dinov2-giant-register-imagenet1k-1-layer",
         }
 
         name = model_name_to_hf_name[model_name]
