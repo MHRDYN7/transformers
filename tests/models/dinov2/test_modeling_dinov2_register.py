@@ -234,9 +234,6 @@ class Dinov2ModelTest(ModelTesterMixin, PipelineTesterMixin, unittest.TestCase):
     test_resize_embeddings = False
     test_head_masking = False
 
-    # def __init__(self, methodName='runTest'):
-    #     super().__init__(methodName)
-    #     self.setUp()
 
     def setUp(self):
         self.model_tester = Dinov2ModelTester(self)
