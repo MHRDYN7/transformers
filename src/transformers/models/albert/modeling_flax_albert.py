@@ -1087,7 +1087,7 @@ class FlaxAlbertForQuestionAnsweringModule(nn.Module):
         hidden_states = outputs[0]
 
         logits = self.qa_outputs(hidden_states)
-        start_logits, end_logits = logits.split(self.config.num_labels, axis=-1)
+        start_logits, end_logits = jnp.split(logits, self.config.num_labels, axis=-1)
         start_logits = start_logits.squeeze(-1)
         end_logits = end_logits.squeeze(-1)
 
@@ -1119,3 +1119,14 @@ append_call_sample_docstring(
     FlaxQuestionAnsweringModelOutput,
     _CONFIG_FOR_DOC,
 )
+
+__all__ = [
+    "FlaxAlbertPreTrainedModel",
+    "FlaxAlbertModel",
+    "FlaxAlbertForPreTraining",
+    "FlaxAlbertForMaskedLM",
+    "FlaxAlbertForSequenceClassification",
+    "FlaxAlbertForMultipleChoice",
+    "FlaxAlbertForTokenClassification",
+    "FlaxAlbertForQuestionAnswering",
+]

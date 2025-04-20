@@ -523,11 +523,12 @@ class VisualBertPreTrainedModel(PreTrainedModel):
             # Slightly different from the TF version which uses truncated_normal for initialization
             # cf https://github.com/pytorch/pytorch/pull/5617
             module.weight.data.normal_(mean=0.0, std=self.config.initializer_range)
-
+            if hasattr(module, "bias") and module.bias is not None:
+                module.bias.data.zero_()
         elif isinstance(module, nn.LayerNorm):
             module.bias.data.zero_()
             module.weight.data.fill_(1.0)
-        if isinstance(module, nn.Linear) and module.bias is not None:
+        elif isinstance(module, VisualBertLMPredictionHead):
             module.bias.data.zero_()
 
 
@@ -559,8 +560,8 @@ class VisualBertForPreTrainingOutput(ModelOutput):
     """
 
     loss: Optional[torch.FloatTensor] = None
-    prediction_logits: torch.FloatTensor = None
-    seq_relationship_logits: torch.FloatTensor = None
+    prediction_logits: Optional[torch.FloatTensor] = None
+    seq_relationship_logits: Optional[torch.FloatTensor] = None
     hidden_states: Optional[Tuple[torch.FloatTensor]] = None
     attentions: Optional[Tuple[torch.FloatTensor]] = None
 
@@ -939,6 +940,14 @@ class VisualBertForPreTraining(VisualBertPreTrainedModel):
         ```"""
         return_dict = return_dict if return_dict is not None else self.config.use_return_dict
 
+        if labels is not None:
+            total_size = attention_mask.size(-1) + visual_attention_mask.size(-1)
+            if labels.size(-1) != total_size:
+                raise ValueError(
+                    "The labels provided should have same sequence length as total attention mask. "
+                    f"Found labels with sequence length {labels.size(-1)}, expected {total_size}."
+                )
+
         outputs = self.visual_bert(
             input_ids,
             attention_mask=attention_mask,
@@ -960,26 +969,12 @@ class VisualBertForPreTraining(VisualBertPreTrainedModel):
 
         total_loss = None
         if labels is not None and sentence_image_labels is not None:
-            total_size = attention_mask.size(-1) + visual_attention_mask.size(-1)
-            if labels.size(-1) != total_size:
-                raise ValueError(
-                    "The labels provided should have same sequence length as total attention mask. "
-                    f"Found labels with sequence length {labels.size(-1)}, expected {total_size}."
-                )
-
             loss_fct = CrossEntropyLoss()
             masked_lm_loss = loss_fct(prediction_scores.view(-1, self.config.vocab_size), labels.view(-1))
             sentence_image_loss = loss_fct(seq_relationship_score.view(-1, 2), sentence_image_labels.view(-1))
             total_loss = masked_lm_loss + sentence_image_loss
 
-        if labels is not None and sentence_image_labels is None:
-            total_size = attention_mask.size(-1) + visual_attention_mask.size(-1)
-            if labels.size(-1) != total_size:
-                raise ValueError(
-                    "The labels provided should have same sequence length as total attention mask. "
-                    f"Found labels with sequence length {labels.size(-1)}, expected {total_size}."
-                )
-
+        elif labels is not None:
             loss_fct = CrossEntropyLoss()
             total_loss = loss_fct(prediction_scores.view(-1, self.config.vocab_size), labels.view(-1))
 
@@ -1588,3 +1583,15 @@ class VisualBertForRegionToPhraseAlignment(VisualBertPreTrainedModel):
             hidden_states=outputs.hidden_states,
             attentions=outputs.attentions,
         )
+
+
+__all__ = [
+    "VisualBertForMultipleChoice",
+    "VisualBertForPreTraining",
+    "VisualBertForQuestionAnswering",
+    "VisualBertForRegionToPhraseAlignment",
+    "VisualBertForVisualReasoning",
+    "VisualBertLayer",
+    "VisualBertModel",
+    "VisualBertPreTrainedModel",
+]

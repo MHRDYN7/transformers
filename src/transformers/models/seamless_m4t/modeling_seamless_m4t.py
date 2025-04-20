@@ -25,7 +25,9 @@ from torch import Tensor, nn
 from torch.nn import CrossEntropyLoss
 
 from ...activations import ACT2FN
-from ...deepspeed import is_deepspeed_zero3_enabled
+from ...generation import GenerationMixin
+from ...integrations.deepspeed import is_deepspeed_zero3_enabled
+from ...integrations.fsdp import is_fsdp_managed_module
 from ...modeling_attn_mask_utils import _prepare_4d_attention_mask, _prepare_4d_causal_attention_mask
 from ...modeling_outputs import (
     BaseModelOutput,
@@ -291,6 +293,8 @@ def format_speech_generation_kwargs(kwargs):
         elif key.startswith("speech_"):
             key = key[len("speech_") :]
             kwargs_speech[key] = value
+        elif key == "generation_config":
+            kwargs_text[key] = value
         else:
             # If the key is already in a specific config, then it's been set with a
             # submodules specific value and we don't override
@@ -822,7 +826,7 @@ class SeamlessM4TConformerEncoder(nn.Module):
         else:
             relative_position_embeddings = None
 
-        deepspeed_zero3_is_enabled = is_deepspeed_zero3_enabled()
+        synced_gpus = is_deepspeed_zero3_enabled() or is_fsdp_managed_module(self)
 
         for i, layer in enumerate(self.layers):
             if output_hidden_states:
@@ -834,14 +838,16 @@ class SeamlessM4TConformerEncoder(nn.Module):
             skip_the_layer = (
                 True if self.training and (dropout_probability < self.config.speech_encoder_layerdrop) else False
             )
-            if not skip_the_layer or deepspeed_zero3_is_enabled:
-                # under deepspeed zero3 all gpus must run in sync
+            if not skip_the_layer or synced_gpus:
+                # under fsdp or deepspeed zero3 all gpus must run in sync
                 if self.gradient_checkpointing and self.training:
                     layer_outputs = self._gradient_checkpointing_func(
                         layer.__call__,
                         hidden_states,
                         attention_mask,
                         relative_position_embeddings,
+                        output_attentions,
+                        conv_attention_mask,
                     )
                 else:
                     layer_outputs = layer(
@@ -1044,7 +1050,10 @@ class SeamlessM4TSinusoidalPositionalEmbedding(nn.Module):
 
     @torch.no_grad()
     def forward(
-        self, input_ids: torch.Tensor = None, inputs_embeds: torch.Tensor = None, past_key_values_length: int = 0
+        self,
+        input_ids: Optional[torch.Tensor] = None,
+        inputs_embeds: Optional[torch.Tensor] = None,
+        past_key_values_length: int = 0,
     ):
         if input_ids is not None:
             bsz, seq_len = input_ids.size()
@@ -1679,7 +1688,7 @@ class SeamlessM4TEncoder(SeamlessM4TPreTrainedModel):
 
     def forward(
         self,
-        input_ids: torch.LongTensor = None,
+        input_ids: Optional[torch.LongTensor] = None,
         attention_mask: Optional[torch.Tensor] = None,
         inputs_embeds: Optional[torch.FloatTensor] = None,
         output_attentions: Optional[bool] = None,
@@ -1867,7 +1876,7 @@ class SeamlessM4TDecoder(SeamlessM4TPreTrainedModel):
 
     def forward(
         self,
-        input_ids: torch.LongTensor = None,
+        input_ids: Optional[torch.LongTensor] = None,
         attention_mask: Optional[torch.Tensor] = None,
         encoder_hidden_states: Optional[torch.FloatTensor] = None,
         encoder_attention_mask: Optional[torch.LongTensor] = None,
@@ -2148,7 +2157,7 @@ class SeamlessM4TTextToUnitModel(SeamlessM4TPreTrainedModel):
         embed_tokens_decoder (`nn.Embedding`, *optional*): input embedding of the decoder.
     """,
 )
-class SeamlessM4TTextToUnitForConditionalGeneration(SeamlessM4TPreTrainedModel):
+class SeamlessM4TTextToUnitForConditionalGeneration(SeamlessM4TPreTrainedModel, GenerationMixin):
     _keys_to_ignore_on_load_missing = [
         "vocoder",
         "speech_encoder",
@@ -2197,7 +2206,7 @@ class SeamlessM4TTextToUnitForConditionalGeneration(SeamlessM4TPreTrainedModel):
     @add_start_docstrings_to_model_forward(M4T_TEXT_INPUTS_DOCSTRING)
     def forward(
         self,
-        input_ids: torch.LongTensor = None,
+        input_ids: Optional[torch.LongTensor] = None,
         attention_mask: Optional[torch.Tensor] = None,
         decoder_input_ids: Optional[torch.LongTensor] = None,
         decoder_attention_mask: Optional[torch.LongTensor] = None,
@@ -2259,28 +2268,6 @@ class SeamlessM4TTextToUnitForConditionalGeneration(SeamlessM4TPreTrainedModel):
             encoder_hidden_states=outputs.encoder_hidden_states,
             encoder_attentions=outputs.encoder_attentions,
         )
-
-    def prepare_inputs_for_generation(
-        self,
-        decoder_input_ids,
-        past_key_values=None,
-        attention_mask=None,
-        use_cache=None,
-        encoder_outputs=None,
-        **kwargs,
-    ):
-        # cut decoder_input_ids if past is used
-        if past_key_values is not None:
-            decoder_input_ids = decoder_input_ids[:, -1:]
-
-        return {
-            "input_ids": None,  # encoder_outputs is defined. input_ids not needed
-            "encoder_outputs": encoder_outputs,
-            "past_key_values": past_key_values,
-            "decoder_input_ids": decoder_input_ids,
-            "attention_mask": attention_mask,
-            "use_cache": use_cache,
-        }
 
     def prepare_decoder_input_ids_from_labels(self, labels: torch.Tensor):
         return shift_tokens_right(labels, self.config.t2u_pad_token_id, self.config.t2u_decoder_start_token_id)
@@ -2359,10 +2346,14 @@ class HifiGanResidualBlock(nn.Module):
         return (kernel_size * dilation - dilation) // 2
 
     def apply_weight_norm(self):
+        weight_norm = nn.utils.weight_norm
+        if hasattr(nn.utils.parametrizations, "weight_norm"):
+            weight_norm = nn.utils.parametrizations.weight_norm
+
         for layer in self.convs1:
-            nn.utils.weight_norm(layer)
+            weight_norm(layer)
         for layer in self.convs2:
-            nn.utils.weight_norm(layer)
+            weight_norm(layer)
 
     def remove_weight_norm(self):
         for layer in self.convs1:
@@ -2590,7 +2581,7 @@ class SeamlessM4TCodeHifiGan(PreTrainedModel):
         lang = self.language_embedding(lang_id).transpose(1, 2)
 
         log_dur_pred = self.dur_predictor(hidden_states.transpose(1, 2))
-        dur_out = torch.clamp(torch.round((torch.exp(log_dur_pred) - 1)).long(), min=1)
+        dur_out = torch.clamp(torch.round((torch.expm1(log_dur_pred))).long(), min=1)
         # B x C x T
         if hidden_states.size(0) == 1:
             hidden_states = torch.repeat_interleave(hidden_states, dur_out.view(-1), dim=2)
@@ -2631,12 +2622,16 @@ class SeamlessM4TCodeHifiGan(PreTrainedModel):
                 module.weight.data[module.padding_idx].zero_()
 
     def apply_weight_norm(self):
-        nn.utils.weight_norm(self.hifi_gan.conv_pre)
+        weight_norm = nn.utils.weight_norm
+        if hasattr(nn.utils.parametrizations, "weight_norm"):
+            weight_norm = nn.utils.parametrizations.weight_norm
+
+        weight_norm(self.hifi_gan.conv_pre)
         for layer in self.hifi_gan.upsampler:
-            nn.utils.weight_norm(layer)
+            weight_norm(layer)
         for layer in self.hifi_gan.resblocks:
             layer.apply_weight_norm()
-        nn.utils.weight_norm(self.hifi_gan.conv_post)
+        weight_norm(self.hifi_gan.conv_post)
 
     def remove_weight_norm(self):
         nn.utils.remove_weight_norm(self.hifi_gan.conv_pre)
@@ -2654,7 +2649,7 @@ class SeamlessM4TCodeHifiGan(PreTrainedModel):
     "The text-to-text SeamlessM4T Model transformer which can be used for T2TT.",
     SEAMLESS_M4T_START_DOCSTRING,
 )
-class SeamlessM4TForTextToText(SeamlessM4TPreTrainedModel):
+class SeamlessM4TForTextToText(SeamlessM4TPreTrainedModel, GenerationMixin):
     _keys_to_ignore_on_load_missing = ["speech_encoder", "t2u_model", "vocoder"]
     main_input_name = "input_ids"
 
@@ -2705,7 +2700,7 @@ class SeamlessM4TForTextToText(SeamlessM4TPreTrainedModel):
     @add_start_docstrings_to_model_forward(M4T_TEXT_INPUTS_DOCSTRING)
     def forward(
         self,
-        input_ids: torch.LongTensor = None,
+        input_ids: Optional[torch.LongTensor] = None,
         attention_mask: Optional[torch.Tensor] = None,
         decoder_input_ids: Optional[torch.LongTensor] = None,
         decoder_attention_mask: Optional[torch.LongTensor] = None,
@@ -2852,7 +2847,8 @@ class SeamlessM4TForTextToText(SeamlessM4TPreTrainedModel):
                 for constrained generation conditioned on the prefix, as described in [Autoregressive Entity
                 Retrieval](https://arxiv.org/abs/2010.00904).
             synced_gpus (`bool`, *optional*, defaults to `False`):
-                Whether to continue running the while loop until max_length (needed for ZeRO stage 3)
+                Whether to continue running the while loop until max_length (needed to avoid deadlocking with
+                `FullyShardedDataParallel` and DeepSpeed ZeRO Stage 3).
             kwargs (`Dict[str, Any]`, *optional*):
                 Ad hoc parametrization of `generate_config` and/or additional model-specific kwargs that will be
                 forwarded to the `forward` function of the model.
@@ -2876,11 +2872,11 @@ class SeamlessM4TForTextToText(SeamlessM4TPreTrainedModel):
                 if tgt_lang not in self.generation_config.text_decoder_lang_to_code_id:
                     raise ValueError(
                         f"""`tgt_lang={tgt_lang}` is not supported by this model. Please specify a `tgt_lang` in
-                        {', '.join(self.generation_config.text_decoder_lang_to_code_id.keys())}"""
+                        {", ".join(self.generation_config.text_decoder_lang_to_code_id.keys())}"""
                     )
                 # tgt_lang gets priority over decoder input ids
                 text_tgt_lang_id = self.generation_config.text_decoder_lang_to_code_id.get(tgt_lang)
-                text_decoder_input_ids = torch.tensor([[text_tgt_lang_id]] * batch_size).to(self.device)
+                text_decoder_input_ids = torch.tensor([[text_tgt_lang_id]] * batch_size, device=self.device)
             else:
                 raise ValueError(
                     """This model generation config doesn't have a `text_decoder_lang_to_code_id` key which maps
@@ -2904,28 +2900,6 @@ class SeamlessM4TForTextToText(SeamlessM4TPreTrainedModel):
             **kwargs,
         )
 
-    def prepare_inputs_for_generation(
-        self,
-        decoder_input_ids,
-        past_key_values=None,
-        attention_mask=None,
-        use_cache=None,
-        encoder_outputs=None,
-        **kwargs,
-    ):
-        # cut decoder_input_ids if past is used
-        if past_key_values is not None:
-            decoder_input_ids = decoder_input_ids[:, -1:]
-
-        return {
-            "input_ids": None,  # encoder_outputs is defined. input_ids not needed
-            "encoder_outputs": encoder_outputs,
-            "past_key_values": past_key_values,
-            "decoder_input_ids": decoder_input_ids,
-            "attention_mask": attention_mask,
-            "use_cache": use_cache,
-        }
-
     @staticmethod
     def _reorder_cache(past_key_values, beam_idx):
         reordered_past = ()
@@ -2941,7 +2915,7 @@ class SeamlessM4TForTextToText(SeamlessM4TPreTrainedModel):
     "The speech-to-text SeamlessM4T Model transformer which can be used for S2TT.",
     SEAMLESS_M4T_START_DOCSTRING,
 )
-class SeamlessM4TForSpeechToText(SeamlessM4TPreTrainedModel):
+class SeamlessM4TForSpeechToText(SeamlessM4TPreTrainedModel, GenerationMixin):
     _keys_to_ignore_on_load_missing = ["text_decoder", "t2u_model", "vocoder"]
     main_input_name = "input_features"
 
@@ -2987,7 +2961,7 @@ class SeamlessM4TForSpeechToText(SeamlessM4TPreTrainedModel):
     @add_start_docstrings_to_model_forward(M4T_SPEECH_INPUTS_DOCSTRING)
     def forward(
         self,
-        input_features: torch.LongTensor = None,
+        input_features: Optional[torch.LongTensor] = None,
         attention_mask: Optional[torch.Tensor] = None,
         decoder_input_ids: Optional[torch.LongTensor] = None,
         decoder_attention_mask: Optional[torch.LongTensor] = None,
@@ -3138,7 +3112,8 @@ class SeamlessM4TForSpeechToText(SeamlessM4TPreTrainedModel):
                 for constrained generation conditioned on the prefix, as described in [Autoregressive Entity
                 Retrieval](https://arxiv.org/abs/2010.00904).
             synced_gpus (`bool`, *optional*, defaults to `False`):
-                Whether to continue running the while loop until max_length (needed for ZeRO stage 3)
+                Whether to continue running the while loop until max_length (needed to avoid deadlocking with
+                `FullyShardedDataParallel` and DeepSpeed ZeRO Stage 3).
             kwargs (`Dict[str, Any]`, *optional*):
                 Ad hoc parametrization of `generate_config` and/or additional model-specific kwargs that will be
                 forwarded to the `forward` function of the model.
@@ -3152,6 +3127,7 @@ class SeamlessM4TForSpeechToText(SeamlessM4TPreTrainedModel):
         """
         text_decoder_input_ids = kwargs.pop("decoder_input_ids", None)
         # overwrite text_decoder_input_ids if tgt_lang is passed. The latter gets priority over decoder_input_ids.
+        input_features = input_features if input_features is not None else kwargs.pop("inputs")
         if tgt_lang is not None:
             inputs = kwargs.get("input_embeds") if input_features is None else input_features
             inputs = (
@@ -3167,11 +3143,11 @@ class SeamlessM4TForSpeechToText(SeamlessM4TPreTrainedModel):
                 if tgt_lang not in self.generation_config.text_decoder_lang_to_code_id:
                     raise ValueError(
                         f"""`tgt_lang={tgt_lang}` is not supported by this model. Please specify a `tgt_lang` in
-                        {', '.join(self.generation_config.text_decoder_lang_to_code_id.keys())}"""
+                        {", ".join(self.generation_config.text_decoder_lang_to_code_id.keys())}"""
                     )
                 # tgt_lang gets priority over decoder input ids
                 text_tgt_lang_id = self.generation_config.text_decoder_lang_to_code_id.get(tgt_lang)
-                text_decoder_input_ids = torch.tensor([[text_tgt_lang_id]] * batch_size).to(self.device)
+                text_decoder_input_ids = torch.tensor([[text_tgt_lang_id]] * batch_size, device=self.device)
             else:
                 raise ValueError(
                     """This model generation config doesn't have a `text_decoder_lang_to_code_id` key which maps
@@ -3194,28 +3170,6 @@ class SeamlessM4TForSpeechToText(SeamlessM4TPreTrainedModel):
             **kwargs,
         )
 
-    def prepare_inputs_for_generation(
-        self,
-        decoder_input_ids,
-        past_key_values=None,
-        attention_mask=None,
-        use_cache=None,
-        encoder_outputs=None,
-        **kwargs,
-    ):
-        # cut decoder_input_ids if past is used
-        if past_key_values is not None:
-            decoder_input_ids = decoder_input_ids[:, -1:]
-
-        return {
-            "input_ids": None,  # encoder_outputs is defined. input_ids not needed
-            "encoder_outputs": encoder_outputs,
-            "past_key_values": past_key_values,
-            "decoder_input_ids": decoder_input_ids,
-            "attention_mask": attention_mask,
-            "use_cache": use_cache,
-        }
-
     @staticmethod
     def _reorder_cache(past_key_values, beam_idx):
         reordered_past = ()
@@ -3231,7 +3185,7 @@ class SeamlessM4TForSpeechToText(SeamlessM4TPreTrainedModel):
     "The text-to-speech SeamlessM4T Model transformer which can be used for T2ST.",
     SEAMLESS_M4T_START_DOCSTRING,
 )
-class SeamlessM4TForTextToSpeech(SeamlessM4TPreTrainedModel):
+class SeamlessM4TForTextToSpeech(SeamlessM4TPreTrainedModel, GenerationMixin):
     _keys_to_ignore_on_load_missing = ["speech_encoder"]
     main_input_name = "input_ids"
 
@@ -3285,7 +3239,7 @@ class SeamlessM4TForTextToSpeech(SeamlessM4TPreTrainedModel):
     @add_start_docstrings_to_model_forward(M4T_TEXT_INPUTS_DOCSTRING)
     def forward(
         self,
-        input_ids: torch.LongTensor = None,
+        input_ids: Optional[torch.LongTensor] = None,
         attention_mask: Optional[torch.Tensor] = None,
         decoder_input_ids: Optional[torch.LongTensor] = None,
         decoder_attention_mask: Optional[torch.LongTensor] = None,
@@ -3456,7 +3410,7 @@ class SeamlessM4TForTextToSpeech(SeamlessM4TPreTrainedModel):
                 elif tgt_lang not in lang_code_to_id:
                     raise ValueError(
                         f"""`tgt_lang={tgt_lang}` is not supported by this model.
-                    Please specify a `tgt_lang` in {','.join(lang_code_to_id.keys())}. Note that SeamlessM4T supports
+                    Please specify a `tgt_lang` in {",".join(lang_code_to_id.keys())}. Note that SeamlessM4T supports
                     more languages for text translation than for speech synthesis."""
                     )
 
@@ -3469,7 +3423,7 @@ class SeamlessM4TForTextToSpeech(SeamlessM4TPreTrainedModel):
 
         # overwrite text_decoder_input_ids if tgt_lang is passed. The latter gets priority over decoder_input_ids.
         text_tgt_lang_id = self.generation_config.text_decoder_lang_to_code_id.get(tgt_lang)
-        text_decoder_input_ids = torch.tensor([[text_tgt_lang_id]] * batch_size).to(self.device)
+        text_decoder_input_ids = torch.tensor([[text_tgt_lang_id]] * batch_size, device=self.device)
 
         kwargs_text["decoder_input_ids"] = text_decoder_input_ids
 
@@ -3490,7 +3444,8 @@ class SeamlessM4TForTextToSpeech(SeamlessM4TPreTrainedModel):
             idx_most_probable_sequences_per_batch = text_generation_output.sequences_scores.view(batch_size, -1)
             idx_most_probable_sequences_per_batch = idx_most_probable_sequences_per_batch.argmax(-1)
             idx_most_probable_sequences_per_batch = (
-                idx_most_probable_sequences_per_batch + torch.arange(batch_size).to(self.device) * num_return_sequences
+                idx_most_probable_sequences_per_batch
+                + torch.arange(batch_size, device=self.device) * num_return_sequences
             )
             sequences = sequences[idx_most_probable_sequences_per_batch]
 
@@ -3511,8 +3466,8 @@ class SeamlessM4TForTextToSpeech(SeamlessM4TPreTrainedModel):
         # Compute t2u decoder_input_ids
         t2u_decoder_input_ids = kwargs_speech.get("decoder_input_ids")
         t2u_tgt_lang_id = self.generation_config.t2u_lang_code_to_id.get(tgt_lang)
-        t2u_decoder_input_ids = torch.tensor([[self.config.t2u_eos_token_id, t2u_tgt_lang_id]] * batch_size).to(
-            self.device
+        t2u_decoder_input_ids = torch.tensor(
+            [[self.config.t2u_eos_token_id, t2u_tgt_lang_id]] * batch_size, device=self.device
         )
         kwargs_speech["decoder_input_ids"] = t2u_decoder_input_ids
         # second generation
@@ -3529,9 +3484,9 @@ class SeamlessM4TForTextToSpeech(SeamlessM4TPreTrainedModel):
         )
 
         vocoder_tgt_lang_id = self.generation_config.vocoder_lang_code_to_id.get(tgt_lang)
-        vocoder_tgt_lang_id = torch.tensor([[vocoder_tgt_lang_id]] * len(unit_ids)).to(self.device)
+        vocoder_tgt_lang_id = torch.tensor([[vocoder_tgt_lang_id]] * len(unit_ids), device=self.device)
 
-        spkr_id = torch.tensor([[spkr_id]] * len(unit_ids)).to(self.device)
+        spkr_id = torch.tensor([[spkr_id]] * len(unit_ids), device=self.device)
 
         waveform, waveform_lengths = self.vocoder(input_ids=unit_ids, spkr_id=spkr_id, lang_id=vocoder_tgt_lang_id)
 
@@ -3544,28 +3499,6 @@ class SeamlessM4TForTextToSpeech(SeamlessM4TPreTrainedModel):
             )
 
         return waveform, waveform_lengths
-
-    def prepare_inputs_for_generation(
-        self,
-        decoder_input_ids,
-        past_key_values=None,
-        attention_mask=None,
-        use_cache=None,
-        encoder_outputs=None,
-        **kwargs,
-    ):
-        # cut decoder_input_ids if past is used
-        if past_key_values is not None:
-            decoder_input_ids = decoder_input_ids[:, -1:]
-
-        return {
-            "input_ids": None,  # encoder_outputs is defined. input_ids not needed
-            "encoder_outputs": encoder_outputs,
-            "past_key_values": past_key_values,
-            "decoder_input_ids": decoder_input_ids,
-            "attention_mask": attention_mask,
-            "use_cache": use_cache,
-        }
 
     @staticmethod
     def _reorder_cache(past_key_values, beam_idx):
@@ -3582,7 +3515,7 @@ class SeamlessM4TForTextToSpeech(SeamlessM4TPreTrainedModel):
     "The speech-to-speech SeamlessM4T Model transformer which can be used for S2ST.",
     SEAMLESS_M4T_START_DOCSTRING,
 )
-class SeamlessM4TForSpeechToSpeech(SeamlessM4TPreTrainedModel):
+class SeamlessM4TForSpeechToSpeech(SeamlessM4TPreTrainedModel, GenerationMixin):
     _keys_to_ignore_on_load_missing = ["text_encoder"]
     main_input_name = "input_features"
 
@@ -3631,7 +3564,7 @@ class SeamlessM4TForSpeechToSpeech(SeamlessM4TPreTrainedModel):
     @add_start_docstrings_to_model_forward(M4T_SPEECH_INPUTS_DOCSTRING)
     def forward(
         self,
-        input_features: torch.LongTensor = None,
+        input_features: Optional[torch.LongTensor] = None,
         attention_mask: Optional[torch.Tensor] = None,
         decoder_input_ids: Optional[torch.LongTensor] = None,
         decoder_attention_mask: Optional[torch.LongTensor] = None,
@@ -3807,7 +3740,7 @@ class SeamlessM4TForSpeechToSpeech(SeamlessM4TPreTrainedModel):
                 elif tgt_lang not in lang_code_to_id:
                     raise ValueError(
                         f"""`tgt_lang={tgt_lang}` is not supported by this model.
-                    Please specify a `tgt_lang` in {','.join(lang_code_to_id.keys())}. Note that SeamlessM4T supports
+                    Please specify a `tgt_lang` in {",".join(lang_code_to_id.keys())}. Note that SeamlessM4T supports
                     more languages for text translation than for speech synthesis."""
                     )
 
@@ -3819,7 +3752,7 @@ class SeamlessM4TForSpeechToSpeech(SeamlessM4TPreTrainedModel):
         text_decoder_input_ids = kwargs_text.get("decoder_input_ids")
         # overwrite text_decoder_input_ids if tgt_lang is passed. The latter gets priority over decoder_input_ids.
         text_tgt_lang_id = self.generation_config.text_decoder_lang_to_code_id.get(tgt_lang)
-        text_decoder_input_ids = torch.tensor([[text_tgt_lang_id]] * batch_size).to(self.device)
+        text_decoder_input_ids = torch.tensor([[text_tgt_lang_id]] * batch_size, device=self.device)
 
         kwargs_text["decoder_input_ids"] = text_decoder_input_ids
 
@@ -3850,7 +3783,8 @@ class SeamlessM4TForSpeechToSpeech(SeamlessM4TPreTrainedModel):
             idx_most_probable_sequences_per_batch = text_generation_output.sequences_scores.view(batch_size, -1)
             idx_most_probable_sequences_per_batch = idx_most_probable_sequences_per_batch.argmax(-1)
             idx_most_probable_sequences_per_batch = (
-                idx_most_probable_sequences_per_batch + torch.arange(batch_size).to(self.device) * num_return_sequences
+                idx_most_probable_sequences_per_batch
+                + torch.arange(batch_size, device=self.device) * num_return_sequences
             )
             sequences = sequences[idx_most_probable_sequences_per_batch]
 
@@ -3871,8 +3805,8 @@ class SeamlessM4TForSpeechToSpeech(SeamlessM4TPreTrainedModel):
         # Compute t2u decoder_input_ids
         t2u_decoder_input_ids = kwargs_speech.get("decoder_input_ids")
         t2u_tgt_lang_id = self.generation_config.t2u_lang_code_to_id.get(tgt_lang)
-        t2u_decoder_input_ids = torch.tensor([[self.config.t2u_eos_token_id, t2u_tgt_lang_id]] * batch_size).to(
-            self.device
+        t2u_decoder_input_ids = torch.tensor(
+            [[self.config.t2u_eos_token_id, t2u_tgt_lang_id]] * batch_size, device=self.device
         )
         kwargs_speech["decoder_input_ids"] = t2u_decoder_input_ids
 
@@ -3890,9 +3824,9 @@ class SeamlessM4TForSpeechToSpeech(SeamlessM4TPreTrainedModel):
         )
 
         vocoder_tgt_lang_id = self.generation_config.vocoder_lang_code_to_id.get(tgt_lang)
-        vocoder_tgt_lang_id = torch.tensor([[vocoder_tgt_lang_id]] * len(unit_ids)).to(self.device)
+        vocoder_tgt_lang_id = torch.tensor([[vocoder_tgt_lang_id]] * len(unit_ids), device=self.device)
 
-        spkr_id = torch.tensor([[spkr_id]] * len(unit_ids)).to(self.device)
+        spkr_id = torch.tensor([[spkr_id]] * len(unit_ids), device=self.device)
 
         waveform, waveform_lengths = self.vocoder(input_ids=unit_ids, spkr_id=spkr_id, lang_id=vocoder_tgt_lang_id)
 
@@ -3916,28 +3850,6 @@ class SeamlessM4TForSpeechToSpeech(SeamlessM4TPreTrainedModel):
             )
         return reordered_past
 
-    def prepare_inputs_for_generation(
-        self,
-        decoder_input_ids,
-        past_key_values=None,
-        attention_mask=None,
-        use_cache=None,
-        encoder_outputs=None,
-        **kwargs,
-    ):
-        # cut decoder_input_ids if past is used
-        if past_key_values is not None:
-            decoder_input_ids = decoder_input_ids[:, -1:]
-
-        return {
-            "input_ids": None,  # encoder_outputs is defined. input_ids not needed
-            "encoder_outputs": encoder_outputs,
-            "past_key_values": past_key_values,
-            "decoder_input_ids": decoder_input_ids,
-            "attention_mask": attention_mask,
-            "use_cache": use_cache,
-        }
-
 
 @add_start_docstrings(
     "The original SeamlessM4T Model transformer which can be used for every tasks available (S2ST, S2TT, T2TT, T2ST).",
@@ -3947,7 +3859,7 @@ class SeamlessM4TForSpeechToSpeech(SeamlessM4TPreTrainedModel):
             Default modality. Used to initialize the model.
     """,
 )
-class SeamlessM4TModel(SeamlessM4TPreTrainedModel):
+class SeamlessM4TModel(SeamlessM4TPreTrainedModel, GenerationMixin):
     _tied_weights_keys = [
         "lm_head.weight",
         "text_encoder.embed_tokens.weight",
@@ -4244,7 +4156,7 @@ class SeamlessM4TModel(SeamlessM4TPreTrainedModel):
                 elif tgt_lang not in lang_code_to_id:
                     raise ValueError(
                         f"""`tgt_lang={tgt_lang}` is not supported by this model.
-                    Please specify a `tgt_lang` in {','.join(lang_code_to_id.keys())}. Note that SeamlessM4T supports
+                    Please specify a `tgt_lang` in {",".join(lang_code_to_id.keys())}. Note that SeamlessM4T supports
                     more languages for text translation than for speech synthesis."""
                     )
 
@@ -4264,7 +4176,7 @@ class SeamlessM4TModel(SeamlessM4TPreTrainedModel):
         if tgt_lang is not None:
             # tgt_lang gets priority over decoder input ids
             text_tgt_lang_id = self.generation_config.text_decoder_lang_to_code_id.get(tgt_lang)
-            text_decoder_input_ids = torch.tensor([[text_tgt_lang_id]] * batch_size).to(self.device)
+            text_decoder_input_ids = torch.tensor([[text_tgt_lang_id]] * batch_size, device=self.device)
 
         kwargs_text["decoder_input_ids"] = text_decoder_input_ids
 
@@ -4314,7 +4226,8 @@ class SeamlessM4TModel(SeamlessM4TPreTrainedModel):
             idx_most_probable_sequences_per_batch = text_generation_output.sequences_scores.view(batch_size, -1)
             idx_most_probable_sequences_per_batch = idx_most_probable_sequences_per_batch.argmax(-1)
             idx_most_probable_sequences_per_batch = (
-                idx_most_probable_sequences_per_batch + torch.arange(batch_size).to(self.device) * num_return_sequences
+                idx_most_probable_sequences_per_batch
+                + torch.arange(batch_size, device=self.device) * num_return_sequences
             )
             sequences = sequences[idx_most_probable_sequences_per_batch]
 
@@ -4335,8 +4248,8 @@ class SeamlessM4TModel(SeamlessM4TPreTrainedModel):
         # Compute t2u decoder_input_ids
         t2u_decoder_input_ids = kwargs_speech.get("decoder_input_ids")
         t2u_tgt_lang_id = self.generation_config.t2u_lang_code_to_id.get(tgt_lang)
-        t2u_decoder_input_ids = torch.tensor([[self.config.t2u_eos_token_id, t2u_tgt_lang_id]] * batch_size).to(
-            self.device
+        t2u_decoder_input_ids = torch.tensor(
+            [[self.config.t2u_eos_token_id, t2u_tgt_lang_id]] * batch_size, device=self.device
         )
         kwargs_speech["decoder_input_ids"] = t2u_decoder_input_ids
 
@@ -4354,9 +4267,9 @@ class SeamlessM4TModel(SeamlessM4TPreTrainedModel):
         )
 
         vocoder_tgt_lang_id = self.generation_config.vocoder_lang_code_to_id.get(tgt_lang)
-        vocoder_tgt_lang_id = torch.tensor([[vocoder_tgt_lang_id]] * len(unit_ids)).to(self.device)
+        vocoder_tgt_lang_id = torch.tensor([[vocoder_tgt_lang_id]] * len(unit_ids), device=self.device)
 
-        spkr_id = torch.tensor([[spkr_id]] * len(unit_ids)).to(self.device)
+        spkr_id = torch.tensor([[spkr_id]] * len(unit_ids), device=self.device)
 
         waveform, waveform_lengths = self.vocoder(input_ids=unit_ids, spkr_id=spkr_id, lang_id=vocoder_tgt_lang_id)
 
@@ -4370,28 +4283,6 @@ class SeamlessM4TModel(SeamlessM4TPreTrainedModel):
 
         return waveform, waveform_lengths
 
-    def prepare_inputs_for_generation(
-        self,
-        decoder_input_ids,
-        past_key_values=None,
-        attention_mask=None,
-        use_cache=None,
-        encoder_outputs=None,
-        **kwargs,
-    ):
-        # cut decoder_input_ids if past is used
-        if past_key_values is not None:
-            decoder_input_ids = decoder_input_ids[:, -1:]
-
-        return {
-            "input_ids": None,  # encoder_outputs is defined. input_ids not needed
-            "encoder_outputs": encoder_outputs,
-            "past_key_values": past_key_values,
-            "decoder_input_ids": decoder_input_ids,
-            "attention_mask": attention_mask,
-            "use_cache": use_cache,
-        }
-
     @staticmethod
     def _reorder_cache(past_key_values, beam_idx):
         reordered_past = ()
@@ -4401,3 +4292,17 @@ class SeamlessM4TModel(SeamlessM4TPreTrainedModel):
                 tuple(past_state.index_select(0, beam_idx) for past_state in layer_past[:2]) + layer_past[2:],
             )
         return reordered_past
+
+
+__all__ = [
+    "SeamlessM4TForTextToSpeech",
+    "SeamlessM4TForSpeechToSpeech",
+    "SeamlessM4TForTextToText",
+    "SeamlessM4TForSpeechToText",
+    "SeamlessM4TModel",
+    "SeamlessM4TPreTrainedModel",
+    "SeamlessM4TCodeHifiGan",
+    "SeamlessM4THifiGan",
+    "SeamlessM4TTextToUnitForConditionalGeneration",
+    "SeamlessM4TTextToUnitModel",
+]

@@ -50,8 +50,8 @@ class EncodecOutput(ModelOutput):
             Decoded audio values, obtained using the decoder part of Encodec.
     """
 
-    audio_codes: torch.LongTensor = None
-    audio_values: torch.FloatTensor = None
+    audio_codes: Optional[torch.LongTensor] = None
+    audio_values: Optional[torch.FloatTensor] = None
 
 
 @dataclass
@@ -64,8 +64,8 @@ class EncodecEncoderOutput(ModelOutput):
             Scaling factor for each `audio_codes` input. This is used to unscale each chunk of audio when decoding.
     """
 
-    audio_codes: torch.LongTensor = None
-    audio_scales: torch.FloatTensor = None
+    audio_codes: Optional[torch.LongTensor] = None
+    audio_scales: Optional[torch.FloatTensor] = None
 
 
 @dataclass
@@ -76,7 +76,7 @@ class EncodecDecoderOutput(ModelOutput):
             Decoded audio values, obtained using the decoder part of Encodec.
     """
 
-    audio_values: torch.FloatTensor = None
+    audio_values: Optional[torch.FloatTensor] = None
 
 
 class EncodecConv1d(nn.Module):
@@ -103,8 +103,12 @@ class EncodecConv1d(nn.Module):
             )
 
         self.conv = nn.Conv1d(in_channels, out_channels, kernel_size, stride, dilation=dilation)
+        weight_norm = nn.utils.weight_norm
+        if hasattr(nn.utils.parametrizations, "weight_norm"):
+            weight_norm = nn.utils.parametrizations.weight_norm
+
         if self.norm_type == "weight_norm":
-            self.conv = nn.utils.weight_norm(self.conv)
+            self.conv = weight_norm(self.conv)
         elif self.norm_type == "time_group_norm":
             self.norm = nn.GroupNorm(1, out_channels)
 
@@ -117,7 +121,7 @@ class EncodecConv1d(nn.Module):
 
         self.register_buffer("stride", stride, persistent=False)
         self.register_buffer("kernel_size", kernel_size, persistent=False)
-        self.register_buffer("padding_total", torch.tensor(kernel_size - stride, dtype=torch.int64), persistent=False)
+        self.register_buffer("padding_total", kernel_size - stride, persistent=False)
 
     def _get_extra_padding_for_conv1d(
         self,
@@ -186,8 +190,13 @@ class EncodecConvTranspose1d(nn.Module):
             )
 
         self.conv = nn.ConvTranspose1d(in_channels, out_channels, kernel_size, stride)
+
+        weight_norm = nn.utils.weight_norm
+        if hasattr(nn.utils.parametrizations, "weight_norm"):
+            weight_norm = nn.utils.parametrizations.weight_norm
+
         if config.norm_type == "weight_norm":
-            self.conv = nn.utils.weight_norm(self.conv)
+            self.conv = weight_norm(self.conv)
         elif config.norm_type == "time_group_norm":
             self.norm = nn.GroupNorm(1, out_channels)
 
@@ -567,7 +576,7 @@ class EncodecModel(EncodecPreTrainedModel):
         scale = None
         if self.config.normalize:
             # if the padding is non zero
-            input_values = input_values * padding_mask
+            input_values = input_values * padding_mask.unsqueeze(1)
             mono = torch.sum(input_values, 1, keepdim=True) / input_values.shape[1]
             scale = mono.pow(2).mean(dim=-1, keepdim=True).sqrt() + 1e-8
             input_values = input_values / scale
@@ -580,7 +589,7 @@ class EncodecModel(EncodecPreTrainedModel):
     def encode(
         self,
         input_values: torch.Tensor,
-        padding_mask: torch.Tensor = None,
+        padding_mask: Optional[torch.Tensor] = None,
         bandwidth: Optional[float] = None,
         return_dict: Optional[bool] = None,
     ) -> Union[Tuple[torch.Tensor, Optional[torch.Tensor]], EncodecEncoderOutput]:
@@ -608,8 +617,7 @@ class EncodecModel(EncodecPreTrainedModel):
             bandwidth = self.config.target_bandwidths[0]
         if bandwidth not in self.config.target_bandwidths:
             raise ValueError(
-                f"This model doesn't support the bandwidth {bandwidth}. "
-                f"Select one of {self.config.target_bandwidths}."
+                f"This model doesn't support the bandwidth {bandwidth}. Select one of {self.config.target_bandwidths}."
             )
 
         _, channels, input_length = input_values.shape
@@ -729,7 +737,7 @@ class EncodecModel(EncodecPreTrainedModel):
                 Whether or not to return a [`~utils.ModelOutput`] instead of a plain tuple.
 
         """
-        return_dict = return_dict or self.config.return_dict
+        return_dict = return_dict if return_dict is not None else self.config.return_dict
 
         chunk_length = self.config.chunk_length
         if chunk_length is None:
@@ -786,7 +794,7 @@ class EncodecModel(EncodecPreTrainedModel):
         >>> audio_codes = outputs.audio_codes
         >>> audio_values = outputs.audio_values
         ```"""
-        return_dict = return_dict or self.config.return_dict
+        return_dict = return_dict if return_dict is not None else self.config.return_dict
 
         if padding_mask is None:
             padding_mask = torch.ones_like(input_values).bool()
@@ -805,3 +813,6 @@ class EncodecModel(EncodecPreTrainedModel):
             return (audio_codes, audio_values)
 
         return EncodecOutput(audio_codes=audio_codes, audio_values=audio_values)
+
+
+__all__ = ["EncodecModel", "EncodecPreTrainedModel"]

@@ -162,7 +162,7 @@ class PatchTSMixerNormLayer(nn.Module):
     """Normalization block
 
     Args:
-        config (`PatchTSMixerConfig`, *required*):
+        config (`PatchTSMixerConfig`):
             Configuration.
     """
 
@@ -234,7 +234,7 @@ class PatchTSMixerChannelFeatureMixerBlock(nn.Module):
     """This module mixes the features in the channel dimension.
 
     Args:
-        config (`PatchTSMixerConfig`, *required*):
+        config (`PatchTSMixerConfig`):
             Configuration.
     """
 
@@ -441,7 +441,7 @@ class PatchMixerBlock(nn.Module):
     """This module mixes the patch dimension.
 
     Args:
-        config (`PatchTSMixerConfig`, *required*):
+        config (`PatchTSMixerConfig`):
             Configuration.
     """
 
@@ -510,7 +510,7 @@ class FeatureMixerBlock(nn.Module):
     """This module mixes the hidden feature dimension.
 
     Args:
-        config (`PatchTSMixerConfig`, *required*):
+        config (`PatchTSMixerConfig`):
             Configuration.
 
     """
@@ -556,7 +556,7 @@ class PatchTSMixerLayer(nn.Module):
     The `PatchTSMixer` layer that does all three kinds of mixing.
 
     Args:
-        config (`PatchTSMixerConfig`, *required*):
+        config (`PatchTSMixerConfig`):
             Configuration.
 
     """
@@ -593,7 +593,7 @@ class PatchTSMixerBlock(nn.Module):
     """The main computing framework of the `PatchTSMixer` model.
 
     Args:
-        config (`PatchTSMixerConfig`, *required*):
+        config (`PatchTSMixerConfig`):
             Configuration.
     """
 
@@ -634,7 +634,8 @@ class PatchTSMixerForPredictionHead(nn.Module):
     """Prediction Head for Forecasting
 
     Args:
-        config (`PatchTSMixerConfig`, *required*): Configuration.
+        config (`PatchTSMixerConfig`):
+            Configuration.
     """
 
     def __init__(self, config: PatchTSMixerConfig, distribution_output=None):
@@ -689,8 +690,8 @@ class PatchTSMixerLinearHead(nn.Module):
     """Linear head for Classification and Regression.
 
     Args:
-        config (`PatchTSMixerConfig`, *required*):
-
+        config (`PatchTSMixerConfig`):
+            Configuration.
     """
 
     def __init__(self, config: PatchTSMixerConfig, distribution_output=None):
@@ -785,7 +786,7 @@ class PatchTSMixerPretrainHead(nn.Module):
     """Pretraining head.
 
     Args:
-        config (`PatchTSMixerConfig`, *required*):
+        config (`PatchTSMixerConfig`):
             Configuration.
     """
 
@@ -1152,7 +1153,7 @@ class PatchTSMixerNOPScaler(nn.Module):
         self.keepdim = config.keepdim if hasattr(config, "keepdim") else True
 
     def forward(
-        self, data: torch.Tensor, observed_indicator: torch.Tensor = None
+        self, data: torch.Tensor, observed_indicator: Optional[torch.Tensor] = None
     ) -> Tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
         """
         Parameters:
@@ -1180,7 +1181,7 @@ class PatchTSMixerEncoderOutput(ModelOutput):
             Hidden-states of the model at the output of each layer.
     """
 
-    last_hidden_state: torch.FloatTensor = None
+    last_hidden_state: Optional[torch.FloatTensor] = None
     hidden_states: Optional[Tuple[torch.FloatTensor]] = None
 
 
@@ -1189,7 +1190,7 @@ class PatchTSMixerEncoder(PatchTSMixerPreTrainedModel):
     Encoder for PatchTSMixer which inputs patched time-series and outputs patched embeddings.
 
     Args:
-        config (`PatchTSMixerConfig`, *required*):
+        config (`PatchTSMixerConfig`):
             Configuration.
     """
 
@@ -1282,9 +1283,9 @@ class PatchTSMixerModelOutput(ModelOutput):
             enabled.
     """
 
-    last_hidden_state: torch.FloatTensor = None
+    last_hidden_state: Optional[torch.FloatTensor] = None
     hidden_states: Optional[Tuple[torch.FloatTensor]] = None
-    patch_input: torch.FloatTensor = None
+    patch_input: Optional[torch.FloatTensor] = None
     mask: Optional[torch.FloatTensor] = None
     loc: Optional[torch.FloatTensor] = None
     scale: Optional[torch.FloatTensor] = None
@@ -1401,8 +1402,8 @@ class PatchTSMixerForPreTrainingOutput(ModelOutput):
     """
 
     loss: Optional[torch.FloatTensor] = None
-    prediction_outputs: torch.FloatTensor = None
-    last_hidden_state: torch.FloatTensor = None
+    prediction_outputs: Optional[torch.FloatTensor] = None
+    last_hidden_state: Optional[torch.FloatTensor] = None
     hidden_states: Optional[Tuple[torch.FloatTensor]] = None
 
 
@@ -1411,7 +1412,7 @@ class PatchTSMixerForPretraining(PatchTSMixerPreTrainedModel):
     `PatchTSMixer` for mask pretraining.
 
     Args:
-        config (`PatchTSMixerConfig`, *required*):
+        config (`PatchTSMixerConfig`):
             Configuration.
 
     Returns:
@@ -1520,11 +1521,11 @@ class PatchTSMixerForPredictionOutput(ModelOutput):
     """
 
     loss: Optional[torch.FloatTensor] = None
-    prediction_outputs: torch.FloatTensor = None
-    last_hidden_state: torch.FloatTensor = None
+    prediction_outputs: Optional[torch.FloatTensor] = None
+    last_hidden_state: Optional[torch.FloatTensor] = None
     hidden_states: Optional[Tuple[torch.FloatTensor]] = None
-    loc: torch.FloatTensor = None
-    scale: torch.FloatTensor = None
+    loc: Optional[torch.FloatTensor] = None
+    scale: Optional[torch.FloatTensor] = None
 
 
 @dataclass
@@ -1538,7 +1539,7 @@ class SamplePatchTSMixerPredictionOutput(ModelOutput):
             Sampled values from the chosen distribution.
     """
 
-    sequences: torch.FloatTensor = None
+    sequences: Optional[torch.FloatTensor] = None
 
 
 @dataclass
@@ -1552,7 +1553,7 @@ class SamplePatchTSMixerRegressionOutput(ModelOutput):
                 Sampled values from the chosen distribution.
     """
 
-    sequences: torch.FloatTensor = None
+    sequences: Optional[torch.FloatTensor] = None
 
 
 # Copied from transformers.models.time_series_transformer.modeling_time_series_transformer.nll
@@ -1593,7 +1594,7 @@ class PatchTSMixerForPrediction(PatchTSMixerPreTrainedModel):
     `PatchTSMixer` for forecasting application.
 
     Args:
-        config (`PatchTSMixerConfig`, *required*):
+        config (`PatchTSMixerConfig`):
             Configuration.
 
     Returns:
@@ -1816,8 +1817,8 @@ class PatchTSMixerForTimeSeriesClassificationOutput(ModelOutput):
     """
 
     loss: Optional[torch.FloatTensor] = None
-    prediction_outputs: torch.FloatTensor = None
-    last_hidden_state: torch.FloatTensor = None
+    prediction_outputs: Optional[torch.FloatTensor] = None
+    last_hidden_state: Optional[torch.FloatTensor] = None
     hidden_states: Optional[Tuple[torch.FloatTensor]] = None
 
 
@@ -1826,7 +1827,7 @@ class PatchTSMixerForTimeSeriesClassification(PatchTSMixerPreTrainedModel):
     `PatchTSMixer` for classification application.
 
     Args:
-        config (`PatchTSMixerConfig`, *required*):
+        config (`PatchTSMixerConfig`):
             Configuration.
 
     Returns:
@@ -1858,7 +1859,7 @@ class PatchTSMixerForTimeSeriesClassification(PatchTSMixerPreTrainedModel):
     def forward(
         self,
         past_values: torch.Tensor,
-        target_values: torch.Tensor = None,
+        target_values: Optional[torch.Tensor] = None,
         output_hidden_states: Optional[bool] = False,
         return_loss: bool = True,
         return_dict: Optional[bool] = None,
@@ -1947,8 +1948,8 @@ class PatchTSMixerForRegressionOutput(ModelOutput):
     """
 
     loss: Optional[torch.FloatTensor] = None
-    regression_outputs: torch.FloatTensor = None
-    last_hidden_state: torch.FloatTensor = None
+    regression_outputs: Optional[torch.FloatTensor] = None
+    last_hidden_state: Optional[torch.FloatTensor] = None
     hidden_states: Optional[Tuple[torch.FloatTensor]] = None
 
 
@@ -1997,7 +1998,7 @@ class PatchTSMixerForRegression(PatchTSMixerPreTrainedModel):
     `PatchTSMixer` for regression application.
 
     Args:
-        config (`PatchTSMixerConfig`, *required*):
+        config (`PatchTSMixerConfig`):
             Configuration.
 
     Returns:
@@ -2048,7 +2049,7 @@ class PatchTSMixerForRegression(PatchTSMixerPreTrainedModel):
     def forward(
         self,
         past_values: torch.Tensor,
-        target_values: torch.Tensor = None,
+        target_values: Optional[torch.Tensor] = None,
         output_hidden_states: Optional[bool] = False,
         return_loss: bool = True,
         return_dict: Optional[bool] = None,
@@ -2169,3 +2170,13 @@ class PatchTSMixerForRegression(PatchTSMixerPreTrainedModel):
         # [batch_size x num_samples x num_targets]
         samples = torch.stack(samples, dim=1).view(-1, num_parallel_samples, self.config.num_targets)
         return SamplePatchTSMixerRegressionOutput(sequences=samples)
+
+
+__all__ = [
+    "PatchTSMixerPreTrainedModel",
+    "PatchTSMixerModel",
+    "PatchTSMixerForPretraining",
+    "PatchTSMixerForPrediction",
+    "PatchTSMixerForTimeSeriesClassification",
+    "PatchTSMixerForRegression",
+]

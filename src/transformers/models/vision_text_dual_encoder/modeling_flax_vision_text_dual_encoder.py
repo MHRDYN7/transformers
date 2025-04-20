@@ -414,8 +414,8 @@ class FlaxVisionTextDualEncoderModel(FlaxPreTrainedModel):
     @classmethod
     def from_vision_text_pretrained(
         cls,
-        vision_model_name_or_path: str = None,
-        text_model_name_or_path: str = None,
+        vision_model_name_or_path: Optional[str] = None,
+        text_model_name_or_path: Optional[str] = None,
         *model_args,
         **kwargs,
     ) -> FlaxPreTrainedModel:
@@ -596,3 +596,6 @@ overwrite_call_docstring(
 append_replace_return_docstrings(
     FlaxVisionTextDualEncoderModel, output_type=FlaxCLIPOutput, config_class=_CONFIG_FOR_DOC
 )
+
+
+__all__ = ["FlaxVisionTextDualEncoderModel"]

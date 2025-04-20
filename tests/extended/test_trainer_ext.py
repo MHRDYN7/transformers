@@ -17,7 +17,6 @@ import os
 import re
 import sys
 from pathlib import Path
-from typing import Tuple
 from unittest.mock import patch
 
 from parameterized import parameterized
@@ -31,6 +30,7 @@ from transformers.testing_utils import (
     get_torch_dist_unique_port,
     require_apex,
     require_bitsandbytes,
+    require_non_xpu,
     require_torch,
     require_torch_gpu,
     require_torch_multi_accelerator,
@@ -80,7 +80,7 @@ class TestTrainerExt(TestCasePlus):
         logs = TrainerState.load_from_json(os.path.join(output_dir, "trainer_state.json")).log_history
 
         if not do_eval:
-            return
+            self.skipTest(reason="do_eval is False")
 
         eval_metrics = [log for log in logs if "eval_loss" in log.keys()]
 
@@ -106,6 +106,7 @@ class TestTrainerExt(TestCasePlus):
     def test_run_seq2seq_ddp(self):
         self.run_seq2seq_quick(distributed=True)
 
+    @require_non_xpu
     @require_apex
     @require_torch_gpu
     def test_run_seq2seq_apex(self):
@@ -184,7 +185,7 @@ class TestTrainerExt(TestCasePlus):
     def test_run_seq2seq_bnb(self):
         from transformers.training_args import OptimizerNames
 
-        def train_and_return_metrics(optim: str) -> Tuple[int, float]:
+        def train_and_return_metrics(optim: str) -> tuple[int, float]:
             extra_args = "--skip_memory_metrics 0"
 
             output_dir = self.run_trainer(

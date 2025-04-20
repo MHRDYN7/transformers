@@ -90,8 +90,8 @@ class TFData2VecVisionModelOutputWithPooling(TFBaseModelOutputWithPooling):
             heads.
     """
 
-    last_hidden_state: tf.Tensor = None
-    pooler_output: tf.Tensor = None
+    last_hidden_state: Optional[tf.Tensor] = None
+    pooler_output: Optional[tf.Tensor] = None
     hidden_states: Tuple[tf.Tensor] | None = None
     attentions: Tuple[tf.Tensor] | None = None
 
@@ -1491,7 +1491,7 @@ class TFData2VecVisionFCNHead(keras.layers.Layer):
                     kernel_size=kernel_size,
                     padding="same",
                     dilation=dilation,
-                    name=f"conv_module_{i+2}",
+                    name=f"conv_module_{i + 2}",
                 )
             )
         if self.num_convs == 0:
@@ -1633,6 +1633,9 @@ class TFData2VecVisionForSemanticSegmentation(TFData2VecVisionPreTrainedModel):
             output_hidden_states if output_hidden_states is not None else self.config.output_hidden_states
         )
 
+        if labels is not None and self.config.num_labels == 1:
+            raise ValueError("The number of labels should be greater than one")
+
         outputs = self.data2vec_vision(
             pixel_values,
             head_mask=head_mask,
@@ -1672,10 +1675,7 @@ class TFData2VecVisionForSemanticSegmentation(TFData2VecVisionPreTrainedModel):
 
         loss = None
         if labels is not None:
-            if self.config.num_labels == 1:
-                raise ValueError("The number of labels should be greater than one")
-            else:
-                loss = self.compute_loss(logits, auxiliary_logits, labels)
+            loss = self.compute_loss(logits, auxiliary_logits, labels)
 
         if not return_dict:
             if output_hidden_states:
@@ -1714,3 +1714,11 @@ class TFData2VecVisionForSemanticSegmentation(TFData2VecVisionPreTrainedModel):
         if getattr(self, "fpn2", None) is not None:
             with tf.name_scope(self.fpn2[0].name):
                 self.fpn2[0].build([None, None, None, self.config.hidden_size])
+
+
+__all__ = [
+    "TFData2VecVisionForImageClassification",
+    "TFData2VecVisionForSemanticSegmentation",
+    "TFData2VecVisionModel",
+    "TFData2VecVisionPreTrainedModel",
+]

@@ -112,7 +112,7 @@ def _compute_mask_indices(
 
     # compute number of masked spans in batch
     input_lengths = (
-        attention_mask.sum(-1).detach().tolist()
+        attention_mask.detach().sum(-1).tolist()
         if attention_mask is not None
         else [sequence_length for _ in range(batch_size)]
     )
@@ -176,7 +176,6 @@ def _compute_mask_indices(
     return spec_aug_mask
 
 
-# Copied from transformers.models.deberta_v2.modeling_deberta_v2.make_log_bucket_position
 def make_log_bucket_position(relative_pos, bucket_size, max_position):
     sign = torch.sign(relative_pos)
     mid = bucket_size // 2
@@ -192,7 +191,6 @@ def make_log_bucket_position(relative_pos, bucket_size, max_position):
     return bucket_pos
 
 
-# Copied from transformers.models.deberta_v2.modeling_deberta_v2.build_relative_position
 def build_relative_position(query_size, key_size, bucket_size=-1, max_position=-1, device=None):
     """
     Build relative position according to the query and key
@@ -241,7 +239,6 @@ def pos_dynamic_expand(pos_index, p2c_att, key_layer):
     return pos_index.expand(p2c_att.size()[:2] + (pos_index.size(-2), key_layer.size(-2)))
 
 
-# Copied from transformers.models.deberta.modeling_deberta.get_mask
 def get_mask(input, local_context):
     if not isinstance(local_context, DropoutContext):
         dropout = local_context
@@ -349,11 +346,15 @@ class SEWDPositionalConvEmbedding(nn.Module):
             stride=config.squeeze_factor,
         )
 
+        weight_norm = nn.utils.weight_norm
+        if hasattr(nn.utils.parametrizations, "weight_norm"):
+            weight_norm = nn.utils.parametrizations.weight_norm
+
         if is_deepspeed_zero3_enabled():
             import deepspeed
 
             with deepspeed.zero.GatheredParameters(self.conv.weight, modifier_rank=0):
-                self.conv = nn.utils.weight_norm(self.conv, name="weight", dim=2)
+                self.conv = weight_norm(self.conv, name="weight", dim=2)
             if hasattr(self.conv, "parametrizations"):
                 weight_g = self.conv.parametrizations.weight.original0
                 weight_v = self.conv.parametrizations.weight.original1
@@ -363,7 +364,7 @@ class SEWDPositionalConvEmbedding(nn.Module):
             deepspeed.zero.register_external_parameter(self, weight_v)
             deepspeed.zero.register_external_parameter(self, weight_g)
         else:
-            self.conv = nn.utils.weight_norm(self.conv, name="weight", dim=2)
+            self.conv = weight_norm(self.conv, name="weight", dim=2)
 
         self.padding = SEWDSamePadLayer(config.num_conv_pos_embeddings)
         self.activation = ACT2FN[config.feat_extract_activation]
@@ -467,7 +468,6 @@ class SEWDFeatureExtractor(SEWDFeatureEncoder):
         )
 
 
-# Copied from transformers.models.deberta.modeling_deberta.ContextPooler
 class ContextPooler(nn.Module):
     def __init__(self, config):
         super().__init__()
@@ -490,7 +490,6 @@ class ContextPooler(nn.Module):
         return self.config.hidden_size
 
 
-# Copied from transformers.models.deberta.modeling_deberta.XSoftmax with deberta->deberta_v2
 class XSoftmax(torch.autograd.Function):
     """
     Masked Softmax which is optimized for saving memory
@@ -520,20 +519,20 @@ class XSoftmax(torch.autograd.Function):
     ```"""
 
     @staticmethod
-    def forward(self, input, mask, dim):
-        self.dim = dim
+    def forward(ctx, input, mask, dim):
+        ctx.dim = dim
         rmask = ~(mask.to(torch.bool))
 
         output = input.masked_fill(rmask, torch.tensor(torch.finfo(input.dtype).min))
-        output = torch.softmax(output, self.dim)
+        output = torch.softmax(output, ctx.dim)
         output.masked_fill_(rmask, 0)
-        self.save_for_backward(output)
+        ctx.save_for_backward(output)
         return output
 
     @staticmethod
-    def backward(self, grad_output):
-        (output,) = self.saved_tensors
-        inputGrad = softmax_backward_data(self, grad_output, output, self.dim, output)
+    def backward(ctx, grad_output):
+        (output,) = ctx.saved_tensors
+        inputGrad = softmax_backward_data(ctx, grad_output, output, ctx.dim, output)
         return inputGrad, None, None
 
     @staticmethod
@@ -554,8 +553,7 @@ class XSoftmax(torch.autograd.Function):
         return masked_fill(g, output, r_mask, g.op("Constant", value_t=torch.tensor(0, dtype=torch.bool)))
 
 
-# Copied from transformers.models.deberta.modeling_deberta.DropoutContext
-class DropoutContext(object):
+class DropoutContext:
     def __init__(self):
         self.dropout = 0
         self.mask = None
@@ -563,7 +561,6 @@ class DropoutContext(object):
         self.reuse_mask = True
 
 
-# Copied from transformers.models.deberta.modeling_deberta.XDropout
 class XDropout(torch.autograd.Function):
     """Optimized dropout function to save computation and memory by using mask operation instead of multiplication."""
 
@@ -603,7 +600,6 @@ class XDropout(torch.autograd.Function):
         return symbolic_opset12.dropout(g, input, dropout_p, train)
 
 
-# Copied from transformers.models.deberta.modeling_deberta.StableDropout
 class StableDropout(nn.Module):
     """
     Optimized dropout module for stabilizing the training
@@ -653,13 +649,12 @@ class StableDropout(nn.Module):
             return self.drop_prob
 
 
-# Copied from transformers.models.deberta.modeling_deberta.DebertaSelfOutput with DebertaV2->SEWD, DebertaLayerNorm->LayerNorm, hidden_dropout_prob->activation_dropout
 class SEWDSelfOutput(nn.Module):
     def __init__(self, config):
         super().__init__()
         self.dense = nn.Linear(config.hidden_size, config.hidden_size)
         self.LayerNorm = LayerNorm(config.hidden_size, config.layer_norm_eps)
-        self.dropout = StableDropout(config.activation_dropout)
+        self.dropout = nn.Dropout(config.activation_dropout)
 
     def forward(self, hidden_states, input_tensor):
         hidden_states = self.dense(hidden_states)
@@ -668,7 +663,6 @@ class SEWDSelfOutput(nn.Module):
         return hidden_states
 
 
-# Copied from transformers.models.deberta_v2.modeling_deberta_v2.DisentangledSelfAttention with attention_probs_dropout_prob->attention_dropout, hidden_dropout_prob->activation_dropout
 class DisentangledSelfAttention(nn.Module):
     """
     Disentangled self-attention module
@@ -745,10 +739,10 @@ class DisentangledSelfAttention(nn.Module):
                 sequence length in which element [i,j] = *1* means the *i* th token in the input can attend to the *j*
                 th token.
 
-            output_attentions (`bool`, optional):
+            output_attentions (`bool`, *optional*):
                 Whether return the attention matrix.
 
-            query_states (`torch.FloatTensor`, optional):
+            query_states (`torch.FloatTensor`, *optional*):
                 The *Q* state in *Attention(Q,K,V)*.
 
             relative_pos (`torch.LongTensor`):
@@ -826,7 +820,7 @@ class DisentangledSelfAttention(nn.Module):
             raise ValueError(f"Relative position ids must be of dim 2 or 3 or 4. {relative_pos.dim()}")
 
         att_span = self.pos_ebd_size
-        relative_pos = relative_pos.long().to(query_layer.device)
+        relative_pos = relative_pos.to(device=query_layer.device, dtype=torch.long)
 
         rel_embeddings = rel_embeddings[0 : att_span * 2, :].unsqueeze(0)
         if self.share_att_key:
@@ -886,7 +880,6 @@ class DisentangledSelfAttention(nn.Module):
         return score
 
 
-# Copied from transformers.models.deberta.modeling_deberta.DebertaAttention with Deberta->SEWD
 class SEWDAttention(nn.Module):
     def __init__(self, config):
         super().__init__()
@@ -939,13 +932,12 @@ class SEWDIntermediate(nn.Module):
         return hidden_states
 
 
-# Copied from transformers.models.deberta.modeling_deberta.DebertaOutput with DebertaLayerNorm->LayerNorm, hidden_dropout_prob->activation_dropout
 class SEWDOutput(nn.Module):
     def __init__(self, config):
         super().__init__()
         self.dense = nn.Linear(config.intermediate_size, config.hidden_size)
         self.LayerNorm = LayerNorm(config.hidden_size, config.layer_norm_eps)
-        self.dropout = StableDropout(config.activation_dropout)
+        self.dropout = nn.Dropout(config.activation_dropout)
         self.config = config
 
     def forward(self, hidden_states, input_tensor):
@@ -955,7 +947,6 @@ class SEWDOutput(nn.Module):
         return hidden_states
 
 
-# Copied from transformers.models.deberta.modeling_deberta.DebertaLayer with Deberta->SEWD
 class SEWDLayer(nn.Module):
     def __init__(self, config):
         super().__init__()
@@ -990,7 +981,6 @@ class SEWDLayer(nn.Module):
             return layer_output
 
 
-# Copied from transformers.models.deberta_v2.modeling_deberta_v2.ConvLayer
 class ConvLayer(nn.Module):
     def __init__(self, config):
         super().__init__()
@@ -1027,7 +1017,6 @@ class ConvLayer(nn.Module):
         return output_states
 
 
-# Copied from transformers.models.deberta_v2.modeling_deberta_v2.DebertaV2Encoder with DebertaV2->SEWD
 class SEWDTransformerEncoder(nn.Module):
     """Modified BertEncoder with relative position bias support"""
 
@@ -1186,7 +1175,8 @@ class SEWDEncoder(nn.Module):
             )
         else:
             # make sure padded tokens output 0
-            hidden_states[~attention_mask.bool()] = 0.0
+            expand_attention_mask = attention_mask.unsqueeze(-1).repeat(1, 1, hidden_states.shape[2])
+            hidden_states[~expand_attention_mask.bool()] = 0.0
 
             input_lengths = (attention_mask.long()).sum(-1)
             # apply pooling formula to get real output_lengths
@@ -1478,7 +1468,7 @@ class SEWDModel(SEWDPreTrainedModel):
     """SEW-D Model with a `language modeling` head on top for Connectionist Temporal Classification (CTC).""",
     SEWD_START_DOCSTRING,
 )
-# Copied from transformers.models.wav2vec2.modeling_wav2vec2.Wav2Vec2ForCTC with Wav2Vec2->SEWD, wav2vec2->sew_d, WAV_2_VEC_2->SEWD
+# Copied from transformers.models.wav2vec2.modeling_wav2vec2.Wav2Vec2ForCTC with Wav2Vec2->SEWD, wav2vec2->sew_d, WAV2VEC2->SEWD
 class SEWDForCTC(SEWDPreTrainedModel):
     def __init__(self, config, target_lang: Optional[str] = None):
         super().__init__(config)
@@ -1575,8 +1565,10 @@ class SEWDForCTC(SEWDPreTrainedModel):
             All labels set to `-100` are ignored (masked), the loss is only computed for labels in `[0, ...,
             config.vocab_size - 1]`.
         """
-
         return_dict = return_dict if return_dict is not None else self.config.use_return_dict
+
+        if labels is not None and labels.max() >= self.config.vocab_size:
+            raise ValueError(f"Label values must be <= vocab_size: {self.config.vocab_size}")
 
         outputs = self.sew_d(
             input_values,
@@ -1593,9 +1585,6 @@ class SEWDForCTC(SEWDPreTrainedModel):
 
         loss = None
         if labels is not None:
-            if labels.max() >= self.config.vocab_size:
-                raise ValueError(f"Label values must be <= vocab_size: {self.config.vocab_size}")
-
             # retrieve loss input_lengths from attention_mask
             attention_mask = (
                 attention_mask if attention_mask is not None else torch.ones_like(input_values, dtype=torch.long)
@@ -1638,7 +1627,7 @@ class SEWDForCTC(SEWDPreTrainedModel):
     """,
     SEWD_START_DOCSTRING,
 )
-# Copied from transformers.models.wav2vec2.modeling_wav2vec2.Wav2Vec2ForSequenceClassification with Wav2Vec2->SEWD, wav2vec2->sew_d, WAV_2_VEC_2->SEWD
+# Copied from transformers.models.wav2vec2.modeling_wav2vec2.Wav2Vec2ForSequenceClassification with Wav2Vec2->SEWD, wav2vec2->sew_d, WAV2VEC2->SEWD
 class SEWDForSequenceClassification(SEWDPreTrainedModel):
     def __init__(self, config):
         super().__init__(config)
@@ -1733,7 +1722,8 @@ class SEWDForSequenceClassification(SEWDPreTrainedModel):
             pooled_output = hidden_states.mean(dim=1)
         else:
             padding_mask = self._get_feature_vector_attention_mask(hidden_states.shape[1], attention_mask)
-            hidden_states[~padding_mask] = 0.0
+            expand_padding_mask = padding_mask.unsqueeze(-1).repeat(1, 1, hidden_states.shape[2])
+            hidden_states[~expand_padding_mask] = 0.0
             pooled_output = hidden_states.sum(dim=1) / padding_mask.sum(dim=1).view(-1, 1)
 
         logits = self.classifier(pooled_output)
@@ -1753,3 +1743,6 @@ class SEWDForSequenceClassification(SEWDPreTrainedModel):
             hidden_states=outputs.hidden_states,
             attentions=outputs.attentions,
         )
+
+
+__all__ = ["SEWDForCTC", "SEWDForSequenceClassification", "SEWDModel", "SEWDPreTrainedModel"]

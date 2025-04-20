@@ -37,6 +37,7 @@ from ...utils import (
     add_start_docstrings_to_model_forward,
     logging,
     replace_return_docstrings,
+    torch_int,
 )
 from .configuration_perceiver import PerceiverConfig
 
@@ -76,8 +77,8 @@ class PerceiverModelOutput(ModelOutput):
             used to compute the weighted average in the cross-attention heads.
     """
 
-    logits: torch.FloatTensor = None
-    last_hidden_state: torch.FloatTensor = None
+    logits: Optional[torch.FloatTensor] = None
+    last_hidden_state: Optional[torch.FloatTensor] = None
     hidden_states: Optional[Tuple[torch.FloatTensor]] = None
     attentions: Optional[Tuple[torch.FloatTensor]] = None
     cross_attentions: Optional[Tuple[torch.FloatTensor]] = None
@@ -97,7 +98,7 @@ class PerceiverDecoderOutput(ModelOutput):
             used to compute the weighted average in the cross-attention heads.
     """
 
-    logits: torch.FloatTensor = None
+    logits: Optional[torch.FloatTensor] = None
     cross_attentions: Optional[Tuple[torch.FloatTensor]] = None
 
 
@@ -126,7 +127,7 @@ class PerceiverMaskedLMOutput(ModelOutput):
     """
 
     loss: Optional[torch.FloatTensor] = None
-    logits: torch.FloatTensor = None
+    logits: Optional[torch.FloatTensor] = None
     hidden_states: Optional[Tuple[torch.FloatTensor]] = None
     attentions: Optional[Tuple[torch.FloatTensor]] = None
     cross_attentions: Optional[Tuple[torch.FloatTensor]] = None
@@ -158,7 +159,7 @@ class PerceiverClassifierOutput(ModelOutput):
     """
 
     loss: Optional[torch.FloatTensor] = None
-    logits: torch.FloatTensor = None
+    logits: Optional[torch.FloatTensor] = None
     hidden_states: Optional[Tuple[torch.FloatTensor]] = None
     attentions: Optional[Tuple[torch.FloatTensor]] = None
     cross_attentions: Optional[Tuple[torch.FloatTensor]] = None
@@ -1740,6 +1741,10 @@ class PerceiverForOpticalFlow(PerceiverPreTrainedModel):
         ```"""
         return_dict = return_dict if return_dict is not None else self.config.use_return_dict
 
+        loss = None
+        if labels is not None:
+            raise NotImplementedError("Optical flow training is not yet supported")
+
         outputs = self.perceiver(
             inputs=inputs,
             attention_mask=attention_mask,
@@ -1749,10 +1754,6 @@ class PerceiverForOpticalFlow(PerceiverPreTrainedModel):
             return_dict=return_dict,
         )
         logits = outputs.logits if return_dict else outputs[0]
-
-        loss = None
-        if labels is not None:
-            raise NotImplementedError("Optical flow training is not yet supported")
 
         if not return_dict:
             output = (logits,) + outputs[2:]
@@ -1974,6 +1975,10 @@ class PerceiverForMultimodalAutoencoding(PerceiverPreTrainedModel):
         ```"""
         return_dict = return_dict if return_dict is not None else self.config.use_return_dict
 
+        loss = None
+        if labels is not None:
+            raise NotImplementedError("Multimodal autoencoding training is not yet supported")
+
         outputs = self.perceiver(
             inputs=inputs,
             attention_mask=attention_mask,
@@ -1984,10 +1989,6 @@ class PerceiverForMultimodalAutoencoding(PerceiverPreTrainedModel):
             return_dict=return_dict,
         )
         logits = outputs.logits if return_dict else outputs[0]
-
-        loss = None
-        if labels is not None:
-            raise NotImplementedError("Multimodal autoencoding training is not yet supported")
 
         if not return_dict:
             output = (logits,) + outputs[2:]
@@ -2767,13 +2768,19 @@ class PerceiverTrainablePositionEncoding(PerceiverAbstractPositionEncoding):
 
     def interpolate_pos_encoding(self, position_embeddings: torch.Tensor, height: int, width: int) -> torch.Tensor:
         num_positions = position_embeddings.shape[0]
-        new_height = new_width = math.sqrt(num_positions)
-        position_embeddings = position_embeddings.reshape(
-            1, int(new_height), int(new_width), self._num_channels
-        ).permute(0, 3, 1, 2)
+        new_height = new_width = torch_int(num_positions**0.5)
+
+        # always interpolate when tracing to ensure the exported model works for dynamic input shapes
+        if not torch.jit.is_tracing() and height == new_height and width == new_width:
+            return position_embeddings
+
+        position_embeddings = position_embeddings.reshape(1, new_height, new_width, self._num_channels).permute(
+            0, 3, 1, 2
+        )
+
         position_embeddings = nn.functional.interpolate(
             position_embeddings,
-            scale_factor=(height / new_height, width / new_width),
+            size=(new_height, new_width),
             mode="bicubic",
             align_corners=False,
         )
@@ -2787,7 +2794,6 @@ class PerceiverTrainablePositionEncoding(PerceiverAbstractPositionEncoding):
 
         if interpolate_pos_encoding:
             height, width = input_size
-            height, width = height + 0.1, width + 0.1
             position_embeddings = self.interpolate_pos_encoding(position_embeddings, height, width)
 
         if batch_size is not None:
@@ -2856,7 +2862,7 @@ class PerceiverFourierPositionEncoding(PerceiverAbstractPositionEncoding):
         batch_size: int,
         device: torch.device,
         dtype: torch.dtype,
-        pos: torch.FloatTensor = None,
+        pos: Optional[torch.FloatTensor] = None,
     ) -> torch.FloatTensor:
         pos = _check_or_build_spatial_positions(pos, index_dims, batch_size)
         fourier_pos_enc = generate_fourier_features(
@@ -3493,3 +3499,17 @@ class PerceiverMultimodalPreprocessor(AbstractPreprocessor):
         final_inputs = torch.cat(padded_ls, dim=1)
 
         return final_inputs, modality_sizes, inputs_without_pos
+
+
+__all__ = [
+    "PerceiverForImageClassificationConvProcessing",
+    "PerceiverForImageClassificationFourier",
+    "PerceiverForImageClassificationLearned",
+    "PerceiverForMaskedLM",
+    "PerceiverForMultimodalAutoencoding",
+    "PerceiverForOpticalFlow",
+    "PerceiverForSequenceClassification",
+    "PerceiverLayer",
+    "PerceiverModel",
+    "PerceiverPreTrainedModel",
+]

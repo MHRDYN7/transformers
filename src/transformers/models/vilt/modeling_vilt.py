@@ -70,7 +70,7 @@ class ViltForImagesAndTextClassificationOutput(ModelOutput):
     """
 
     loss: Optional[torch.FloatTensor] = None
-    logits: torch.FloatTensor = None
+    logits: Optional[torch.FloatTensor] = None
     hidden_states: Optional[List[Tuple[torch.FloatTensor]]] = None
     attentions: Optional[List[Tuple[torch.FloatTensor]]] = None
 
@@ -171,7 +171,7 @@ class ViltEmbeddings(nn.Module):
         select = torch.cat(select, dim=0)
         x = x[select[:, 0], select[:, 1]].view(batch_size, -1, num_channels)
         x_mask = x_mask[select[:, 0], select[:, 1]].view(batch_size, -1)
-        # `patch_index` should be on the same device as `select` (for torch>=1.13), which is ensured at definition time.
+        # `patch_index` should be on the same device as `select`, which is ensured at definition time.
         patch_index = patch_index[select[:, 0], select[:, 1]].view(batch_size, -1, 2)
         pos_embed = pos_embed[select[:, 0], select[:, 1]].view(batch_size, -1, num_channels)
 
@@ -322,7 +322,7 @@ class ViltSelfAttention(nn.Module):
         super().__init__()
         if config.hidden_size % config.num_attention_heads != 0 and not hasattr(config, "embedding_size"):
             raise ValueError(
-                f"The hidden size {config.hidden_size,} is not a multiple of the number of attention "
+                f"The hidden size {config.hidden_size} is not a multiple of the number of attention "
                 f"heads {config.num_attention_heads}."
             )
 
@@ -1226,6 +1226,10 @@ class ViltForImageAndTextRetrieval(ViltPreTrainedModel):
         ```"""
         return_dict = return_dict if return_dict is not None else self.config.use_return_dict
 
+        loss = None
+        if labels is not None:
+            raise NotImplementedError("Training is not yet supported.")
+
         outputs = self.vilt(
             input_ids,
             attention_mask=attention_mask,
@@ -1243,12 +1247,6 @@ class ViltForImageAndTextRetrieval(ViltPreTrainedModel):
         pooler_output = outputs.pooler_output if return_dict else outputs[1]
 
         logits = self.rank_output(pooler_output)
-
-        loss = None
-        if labels is not None:
-            # move labels to correct device to enable PP
-            labels = labels.to(logits.device)
-            raise NotImplementedError("Training is not yet supported.")
 
         if not return_dict:
             output = (logits,) + outputs[2:]
@@ -1487,3 +1485,15 @@ class ViltForTokenClassification(ViltPreTrainedModel):
             hidden_states=outputs.hidden_states,
             attentions=outputs.attentions,
         )
+
+
+__all__ = [
+    "ViltForImageAndTextRetrieval",
+    "ViltForImagesAndTextClassification",
+    "ViltForTokenClassification",
+    "ViltForMaskedLM",
+    "ViltForQuestionAnswering",
+    "ViltLayer",
+    "ViltModel",
+    "ViltPreTrainedModel",
+]

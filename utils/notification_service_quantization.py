@@ -13,6 +13,7 @@
 # limitations under the License.
 
 import ast
+import datetime
 import json
 import os
 import sys
@@ -20,6 +21,7 @@ import time
 from typing import Dict
 
 from get_ci_error_statistics import get_jobs
+from huggingface_hub import HfApi
 from notification_service import (
     Message,
     handle_stacktraces,
@@ -31,6 +33,7 @@ from notification_service import (
 from slack_sdk import WebClient
 
 
+api = HfApi()
 client = WebClient(token=os.environ["CI_SLACK_BOT_TOKEN"])
 
 
@@ -149,7 +152,7 @@ class QuantizationMessage(Message):
                         job_result,
                         failures,
                         device,
-                        text=f'Number of failures: {job_result["failed"][device]}',
+                        text=f"Number of failures: {job_result['failed'][device]}",
                     )
 
                     print("Sending the following reply")
@@ -172,7 +175,7 @@ if __name__ == "__main__":
     # This env. variable is set in workflow file (under the job `send_results`).
     ci_event = os.environ["CI_EVENT"]
 
-    title = f"🤗 Results of the {ci_event} tests."
+    title = f"🤗 Results of the {ci_event} - {os.getenv('CI_TEST_JOB')}."
 
     if setup_failed:
         Message.error_out(
@@ -200,7 +203,7 @@ if __name__ == "__main__":
             "job_link": {},
         }
         for quant in quantization_matrix
-        if f"run_quantization_torch_gpu_{ quant }_test_reports" in available_artifacts
+        if f"run_quantization_torch_gpu_{quant}_test_reports" in available_artifacts
     }
 
     github_actions_jobs = get_jobs(
@@ -217,7 +220,7 @@ if __name__ == "__main__":
                 break
 
     for quant in quantization_results.keys():
-        for artifact_path in available_artifacts[f"run_quantization_torch_gpu_{ quant }_test_reports"].paths:
+        for artifact_path in available_artifacts[f"run_quantization_torch_gpu_{quant}_test_reports"].paths:
             artifact = retrieve_artifact(artifact_path["path"], artifact_path["gpu"])
             if "stats" in artifact:
                 # Link to the GitHub Action job
@@ -248,6 +251,19 @@ if __name__ == "__main__":
 
     with open(f"ci_results_{job_name}/quantization_results.json", "w", encoding="UTF-8") as fp:
         json.dump(quantization_results, fp, indent=4, ensure_ascii=False)
+
+    target_workflow = "huggingface/transformers/.github/workflows/self-scheduled-caller.yml@refs/heads/main"
+    is_scheduled_ci_run = os.environ.get("CI_WORKFLOW_REF") == target_workflow
+
+    # upload results to Hub dataset (only for the scheduled daily CI run on `main`)
+    if is_scheduled_ci_run:
+        api.upload_file(
+            path_or_fileobj=f"ci_results_{job_name}/quantization_results.json",
+            path_in_repo=f"{datetime.datetime.today().strftime('%Y-%m-%d')}/ci_results_{job_name}/quantization_results.json",
+            repo_id="hf-internal-testing/transformers_daily_ci",
+            repo_type="dataset",
+            token=os.environ.get("TRANSFORMERS_CI_RESULTS_UPLOAD_TOKEN", None),
+        )
 
     message = QuantizationMessage(
         title,

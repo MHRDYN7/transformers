@@ -33,7 +33,13 @@ from ...modeling_outputs import (
 )
 from ...modeling_utils import PreTrainedModel
 from ...pytorch_utils import apply_chunking_to_forward
-from ...utils import add_start_docstrings, add_start_docstrings_to_model_forward, logging, replace_return_docstrings
+from ...utils import (
+    add_start_docstrings,
+    add_start_docstrings_to_model_forward,
+    logging,
+    replace_return_docstrings,
+    torch_int,
+)
 from .configuration_layoutlmv3 import LayoutLMv3Config
 
 
@@ -368,6 +374,10 @@ class LayoutLMv3PreTrainedModel(PreTrainedModel):
         elif isinstance(module, nn.LayerNorm):
             module.bias.data.zero_()
             module.weight.data.fill_(1.0)
+        elif isinstance(module, LayoutLMv3Model):
+            if self.config.visual_embed:
+                module.cls_token.data.zero_()
+                module.pos_embed.data.zero_()
 
 
 class LayoutLMv3SelfAttention(nn.Module):
@@ -859,7 +869,7 @@ class LayoutLMv3Model(LayoutLMv3PreTrainedModel):
         >>> processor = AutoProcessor.from_pretrained("microsoft/layoutlmv3-base", apply_ocr=False)
         >>> model = AutoModel.from_pretrained("microsoft/layoutlmv3-base")
 
-        >>> dataset = load_dataset("nielsr/funsd-layoutlmv3", split="train")
+        >>> dataset = load_dataset("nielsr/funsd-layoutlmv3", split="train", trust_remote_code=True)
         >>> example = dataset[0]
         >>> image = example["image"]
         >>> words = example["tokens"]
@@ -910,8 +920,8 @@ class LayoutLMv3Model(LayoutLMv3PreTrainedModel):
         patch_height = patch_width = None
         if pixel_values is not None:
             patch_height, patch_width = (
-                int(pixel_values.shape[2] / self.config.patch_size),
-                int(pixel_values.shape[3] / self.config.patch_size),
+                torch_int(pixel_values.shape[2] / self.config.patch_size),
+                torch_int(pixel_values.shape[3] / self.config.patch_size),
             )
             visual_embeddings = self.forward_image(pixel_values)
             visual_attention_mask = torch.ones(
@@ -1075,7 +1085,7 @@ class LayoutLMv3ForTokenClassification(LayoutLMv3PreTrainedModel):
         >>> processor = AutoProcessor.from_pretrained("microsoft/layoutlmv3-base", apply_ocr=False)
         >>> model = AutoModelForTokenClassification.from_pretrained("microsoft/layoutlmv3-base", num_labels=7)
 
-        >>> dataset = load_dataset("nielsr/funsd-layoutlmv3", split="train")
+        >>> dataset = load_dataset("nielsr/funsd-layoutlmv3", split="train", trust_remote_code=True)
         >>> example = dataset[0]
         >>> image = example["image"]
         >>> words = example["tokens"]
@@ -1191,7 +1201,7 @@ class LayoutLMv3ForQuestionAnswering(LayoutLMv3PreTrainedModel):
         >>> processor = AutoProcessor.from_pretrained("microsoft/layoutlmv3-base", apply_ocr=False)
         >>> model = AutoModelForQuestionAnswering.from_pretrained("microsoft/layoutlmv3-base")
 
-        >>> dataset = load_dataset("nielsr/funsd-layoutlmv3", split="train")
+        >>> dataset = load_dataset("nielsr/funsd-layoutlmv3", split="train", trust_remote_code=True)
         >>> example = dataset[0]
         >>> image = example["image"]
         >>> question = "what's his name?"
@@ -1311,7 +1321,7 @@ class LayoutLMv3ForSequenceClassification(LayoutLMv3PreTrainedModel):
         >>> processor = AutoProcessor.from_pretrained("microsoft/layoutlmv3-base", apply_ocr=False)
         >>> model = AutoModelForSequenceClassification.from_pretrained("microsoft/layoutlmv3-base")
 
-        >>> dataset = load_dataset("nielsr/funsd-layoutlmv3", split="train")
+        >>> dataset = load_dataset("nielsr/funsd-layoutlmv3", split="train", trust_remote_code=True)
         >>> example = dataset[0]
         >>> image = example["image"]
         >>> words = example["tokens"]
@@ -1376,3 +1386,12 @@ class LayoutLMv3ForSequenceClassification(LayoutLMv3PreTrainedModel):
             hidden_states=outputs.hidden_states,
             attentions=outputs.attentions,
         )
+
+
+__all__ = [
+    "LayoutLMv3ForQuestionAnswering",
+    "LayoutLMv3ForSequenceClassification",
+    "LayoutLMv3ForTokenClassification",
+    "LayoutLMv3Model",
+    "LayoutLMv3PreTrainedModel",
+]

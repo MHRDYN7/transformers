@@ -78,15 +78,15 @@ class FastSpeech2ConformerModelOutput(ModelOutput):
     """
 
     loss: Optional[torch.FloatTensor] = None
-    spectrogram: torch.FloatTensor = None
+    spectrogram: Optional[torch.FloatTensor] = None
     encoder_last_hidden_state: Optional[torch.FloatTensor] = None
     encoder_hidden_states: Optional[Tuple[torch.FloatTensor]] = None
     encoder_attentions: Optional[Tuple[torch.FloatTensor]] = None
     decoder_hidden_states: Optional[Tuple[torch.FloatTensor]] = None
     decoder_attentions: Optional[Tuple[torch.FloatTensor]] = None
-    duration_outputs: torch.LongTensor = None
-    pitch_outputs: torch.FloatTensor = None
-    energy_outputs: torch.FloatTensor = None
+    duration_outputs: Optional[torch.LongTensor] = None
+    pitch_outputs: Optional[torch.FloatTensor] = None
+    energy_outputs: Optional[torch.FloatTensor] = None
 
 
 @dataclass
@@ -133,7 +133,7 @@ class FastSpeech2ConformerWithHifiGanOutput(FastSpeech2ConformerModelOutput):
             Outputs of the energy predictor.
     """
 
-    waveform: torch.FloatTensor = None
+    waveform: Optional[torch.FloatTensor] = None
 
 
 _CONFIG_FOR_DOC = "FastSpeech2ConformerConfig"
@@ -1416,10 +1416,14 @@ class HifiGanResidualBlock(nn.Module):
         return (kernel_size * dilation - dilation) // 2
 
     def apply_weight_norm(self):
+        weight_norm = nn.utils.weight_norm
+        if hasattr(nn.utils.parametrizations, "weight_norm"):
+            weight_norm = nn.utils.parametrizations.weight_norm
+
         for layer in self.convs1:
-            nn.utils.weight_norm(layer)
+            weight_norm(layer)
         for layer in self.convs2:
-            nn.utils.weight_norm(layer)
+            weight_norm(layer)
 
     def remove_weight_norm(self):
         for layer in self.convs1:
@@ -1493,12 +1497,16 @@ class FastSpeech2ConformerHifiGan(PreTrainedModel):
                 module.bias.data.zero_()
 
     def apply_weight_norm(self):
-        nn.utils.weight_norm(self.conv_pre)
+        weight_norm = nn.utils.weight_norm
+        if hasattr(nn.utils.parametrizations, "weight_norm"):
+            weight_norm = nn.utils.parametrizations.weight_norm
+
+        weight_norm(self.conv_pre)
         for layer in self.upsampler:
-            nn.utils.weight_norm(layer)
+            weight_norm(layer)
         for layer in self.resblocks:
             layer.apply_weight_norm()
-        nn.utils.weight_norm(self.conv_post)
+        weight_norm(self.conv_post)
 
     def remove_weight_norm(self):
         nn.utils.remove_weight_norm(self.conv_pre)
@@ -1679,3 +1687,11 @@ class FastSpeech2ConformerWithHifiGan(PreTrainedModel):
             return model_outputs + (waveform,)
 
         return FastSpeech2ConformerWithHifiGanOutput(waveform=waveform, **model_outputs)
+
+
+__all__ = [
+    "FastSpeech2ConformerWithHifiGan",
+    "FastSpeech2ConformerHifiGan",
+    "FastSpeech2ConformerModel",
+    "FastSpeech2ConformerPreTrainedModel",
+]

@@ -587,7 +587,7 @@ class TFHubertFeatureEncoder(keras.layers.Layer):
 
         if config.feat_extract_norm == "group":
             conv_layers = [TFHubertGroupNormConvLayer(config, layer_id=0, name=f"conv_layers.{0}")] + [
-                TFHubertNoLayerNormConvLayer(config, layer_id=i + 1, name=f"conv_layers.{i+1}")
+                TFHubertNoLayerNormConvLayer(config, layer_id=i + 1, name=f"conv_layers.{i + 1}")
                 for i in range(config.num_feat_extract_layers - 1)
             ]
         elif config.feat_extract_norm == "layer":
@@ -1600,6 +1600,8 @@ class TFHubertForCTC(TFHubertPreTrainedModel):
 
         >>> loss = model(input_values, labels=labels).loss
         ```"""
+        if labels is not None and tf.reduce_max(labels) >= self.config.vocab_size:
+            raise ValueError(f"Label values must be <= vocab_size: {self.config.vocab_size}")
 
         outputs = self.hubert(
             input_values=input_values,
@@ -1619,9 +1621,6 @@ class TFHubertForCTC(TFHubertPreTrainedModel):
         logits = self.lm_head(hidden_states)
 
         if labels is not None:
-            if tf.reduce_max(labels) >= self.config.vocab_size:
-                raise ValueError(f"Label values must be <= vocab_size: {self.config.vocab_size}")
-
             attention_mask = (
                 attention_mask if attention_mask is not None else tf.ones_like(input_values, dtype=tf.float32)
             )
@@ -1671,3 +1670,6 @@ class TFHubertForCTC(TFHubertPreTrainedModel):
         if getattr(self, "lm_head", None) is not None:
             with tf.name_scope(self.lm_head.name):
                 self.lm_head.build([None, None, self.output_hidden_size])
+
+
+__all__ = ["TFHubertForCTC", "TFHubertModel", "TFHubertPreTrainedModel"]

@@ -250,6 +250,9 @@ class MegaRMSNorm(nn.Module):
         input * torch.rsqrt(mean_square + self.eps)
         return input
 
+    def extra_repr(self):
+        return f"{self.num_features}, eps={self.eps}, affine={self.affine}"
+
 
 class MegaScaleNorm(nn.Module):
     """
@@ -2268,3 +2271,15 @@ class MegaForQuestionAnswering(MegaPreTrainedModel):
             hidden_states=outputs.hidden_states,
             attentions=outputs.attentions,
         )
+
+
+__all__ = [
+    "MegaForCausalLM",
+    "MegaForMaskedLM",
+    "MegaForMultipleChoice",
+    "MegaForQuestionAnswering",
+    "MegaForSequenceClassification",
+    "MegaForTokenClassification",
+    "MegaModel",
+    "MegaPreTrainedModel",
+]

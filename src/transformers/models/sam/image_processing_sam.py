@@ -35,11 +35,11 @@ from ...image_utils import (
     make_list_of_images,
     to_numpy_array,
     valid_images,
-    validate_kwargs,
     validate_preprocess_arguments,
 )
 from ...utils import (
     TensorType,
+    filter_out_non_signature_kwargs,
     is_tf_available,
     is_torch_available,
     is_torchvision_available,
@@ -127,8 +127,8 @@ class SamImageProcessor(BaseImageProcessor):
         image_mean: Optional[Union[float, List[float]]] = None,
         image_std: Optional[Union[float, List[float]]] = None,
         do_pad: bool = True,
-        pad_size: int = None,
-        mask_pad_size: int = None,
+        pad_size: Optional[int] = None,
+        mask_pad_size: Optional[int] = None,
         do_convert_rgb: bool = True,
         **kwargs,
     ) -> None:
@@ -162,26 +162,6 @@ class SamImageProcessor(BaseImageProcessor):
         self.pad_size = pad_size
         self.mask_pad_size = mask_pad_size
         self.do_convert_rgb = do_convert_rgb
-        self._valid_processor_keys = [
-            "images",
-            "segmentation_maps",
-            "do_resize",
-            "size",
-            "mask_size",
-            "resample",
-            "do_rescale",
-            "rescale_factor",
-            "do_normalize",
-            "image_mean",
-            "image_std",
-            "do_pad",
-            "pad_size",
-            "mask_pad_size",
-            "do_convert_rgb",
-            "return_tensors",
-            "data_format",
-            "input_data_format",
-        ]
 
     def pad_image(
         self,
@@ -316,7 +296,7 @@ class SamImageProcessor(BaseImageProcessor):
         do_resize: Optional[bool] = None,
         size: Dict[str, int] = None,
         resample: PILImageResampling = None,
-        do_rescale: bool = None,
+        do_rescale: Optional[bool] = None,
         rescale_factor: Optional[float] = None,
         do_normalize: Optional[bool] = None,
         image_mean: Optional[Union[float, List[float]]] = None,
@@ -327,8 +307,6 @@ class SamImageProcessor(BaseImageProcessor):
         data_format: Optional[Union[str, ChannelDimension]] = None,
         input_data_format: Optional[Union[str, ChannelDimension]] = None,
     ) -> Tuple[np.ndarray, Tuple[int, int], Tuple[int, int]]:
-        image = to_numpy_array(image)
-
         # PIL RGBA images are converted to RGB
         if do_convert_rgb:
             image = convert_to_rgb(image)
@@ -336,7 +314,7 @@ class SamImageProcessor(BaseImageProcessor):
         # All transformations expect numpy arrays.
         image = to_numpy_array(image)
 
-        if is_scaled_image(image) and do_rescale:
+        if do_rescale and is_scaled_image(image):
             logger.warning_once(
                 "It looks like you are trying to rescale already rescaled images. If the input"
                 " images have pixel values between 0 and 1, set `do_rescale=False` to avoid rescaling them again."
@@ -409,6 +387,7 @@ class SamImageProcessor(BaseImageProcessor):
 
         return segmentation_map, original_size
 
+    @filter_out_non_signature_kwargs()
     def preprocess(
         self,
         images: ImageInput,
@@ -429,7 +408,6 @@ class SamImageProcessor(BaseImageProcessor):
         return_tensors: Optional[Union[str, TensorType]] = None,
         data_format: ChannelDimension = ChannelDimension.FIRST,
         input_data_format: Optional[Union[str, ChannelDimension]] = None,
-        **kwargs,
     ):
         """
         Preprocess an image or batch of images.
@@ -512,8 +490,6 @@ class SamImageProcessor(BaseImageProcessor):
         do_convert_rgb = do_convert_rgb if do_convert_rgb is not None else self.do_convert_rgb
 
         images = make_list_of_images(images)
-
-        validate_kwargs(captured_kwargs=kwargs.keys(), valid_processor_keys=self._valid_processor_keys)
 
         if not valid_images(images):
             raise ValueError(
@@ -1395,9 +1371,17 @@ def _mask_to_rle_pytorch(input_mask: "torch.Tensor"):
     out = []
     for i in range(batch_size):
         cur_idxs = change_indices[change_indices[:, 0] == i, 1] + 1
+        if len(cur_idxs) == 0:
+            # No changes => either all 0 or all 1
+            # If the entire mask is 0, RLE is [height*width] or if the entire mask is 1, RLE is [0, height*width].
+            if input_mask[i, 0] == 0:
+                out.append({"size": [height, width], "counts": [height * width]})
+            else:
+                out.append({"size": [height, width], "counts": [0, height * width]})
+            continue
         btw_idxs = cur_idxs[1:] - cur_idxs[:-1]
         counts = [] if input_mask[i, 0] == 0 else [0]
-        counts += [cur_idxs[0].item()] + btw_idxs.tolist() + [height * width - cur_idxs[-1]]
+        counts += [cur_idxs[0].item()] + btw_idxs.tolist() + [height * width - cur_idxs[-1].item()]
         out.append({"size": [height, width], "counts": counts})
     return out
 
@@ -1417,10 +1401,20 @@ def _mask_to_rle_tf(input_mask: "tf.Tensor"):
     # Encode run length
     out = []
     for i in range(batch_size):
-        cur_idxs = change_indices[change_indices[:, 0] == i, 1] + 1
+        cur_idxs = change_indices[change_indices[:, 0] == i][:, 1] + 1
+        if len(cur_idxs) == 0:
+            # No changes => either all 0 or all 1
+            # If the entire mask is 0, RLE is [height*width] or if the entire mask is 1, RLE is [0, height*width].
+            if input_mask[i, 0] == 0:
+                out.append({"size": [height, width], "counts": [height * width]})
+            else:
+                out.append({"size": [height, width], "counts": [0, height * width]})
+            continue
         btw_idxs = cur_idxs[1:] - cur_idxs[:-1]
         counts = [] if input_mask[i, 0] == 0 else [0]
-        counts += [cur_idxs[0].item()] + btw_idxs.tolist() + [height * width - cur_idxs[-1]]
+        counts += (
+            [cur_idxs[0].numpy().item()] + btw_idxs.numpy().tolist() + [height * width - cur_idxs[-1].numpy().item()]
+        )
         out.append({"size": [height, width], "counts": counts})
     return out
 
@@ -1495,3 +1489,6 @@ def _postprocess_for_mg_tf(rle_masks, iou_scores, mask_boxes, amg_crops_nms_thre
     masks = [_rle_to_mask(rle) for rle in rle_masks]
 
     return masks, iou_scores, rle_masks, mask_boxes
+
+
+__all__ = ["SamImageProcessor"]

@@ -579,7 +579,6 @@ class LiltPreTrainedModel(PreTrainedModel):
     supports_gradient_checkpointing = True
     _no_split_modules = []
 
-    # Copied from transformers.models.bert.modeling_bert.BertPreTrainedModel._init_weights
     def _init_weights(self, module):
         """Initialize the weights"""
         if isinstance(module, nn.Linear):
@@ -729,7 +728,7 @@ class LiltModel(LiltPreTrainedModel):
         >>> tokenizer = AutoTokenizer.from_pretrained("SCUT-DLVCLab/lilt-roberta-en-base")
         >>> model = AutoModel.from_pretrained("SCUT-DLVCLab/lilt-roberta-en-base")
 
-        >>> dataset = load_dataset("nielsr/funsd-layoutlmv3", split="train")
+        >>> dataset = load_dataset("nielsr/funsd-layoutlmv3", split="train", trust_remote_code=True)
         >>> example = dataset[0]
         >>> words = example["tokens"]
         >>> boxes = example["bboxes"]
@@ -868,7 +867,7 @@ class LiltForSequenceClassification(LiltPreTrainedModel):
         >>> tokenizer = AutoTokenizer.from_pretrained("SCUT-DLVCLab/lilt-roberta-en-base")
         >>> model = AutoModelForSequenceClassification.from_pretrained("SCUT-DLVCLab/lilt-roberta-en-base")
 
-        >>> dataset = load_dataset("nielsr/funsd-layoutlmv3", split="train")
+        >>> dataset = load_dataset("nielsr/funsd-layoutlmv3", split="train", trust_remote_code=True)
         >>> example = dataset[0]
         >>> words = example["tokens"]
         >>> boxes = example["bboxes"]
@@ -987,7 +986,7 @@ class LiltForTokenClassification(LiltPreTrainedModel):
         >>> tokenizer = AutoTokenizer.from_pretrained("SCUT-DLVCLab/lilt-roberta-en-base")
         >>> model = AutoModelForTokenClassification.from_pretrained("SCUT-DLVCLab/lilt-roberta-en-base")
 
-        >>> dataset = load_dataset("nielsr/funsd-layoutlmv3", split="train")
+        >>> dataset = load_dataset("nielsr/funsd-layoutlmv3", split="train", trust_remote_code=True)
         >>> example = dataset[0]
         >>> words = example["tokens"]
         >>> boxes = example["bboxes"]
@@ -1116,7 +1115,7 @@ class LiltForQuestionAnswering(LiltPreTrainedModel):
         >>> tokenizer = AutoTokenizer.from_pretrained("SCUT-DLVCLab/lilt-roberta-en-base")
         >>> model = AutoModelForQuestionAnswering.from_pretrained("SCUT-DLVCLab/lilt-roberta-en-base")
 
-        >>> dataset = load_dataset("nielsr/funsd-layoutlmv3", split="train")
+        >>> dataset = load_dataset("nielsr/funsd-layoutlmv3", split="train", trust_remote_code=True)
         >>> example = dataset[0]
         >>> words = example["tokens"]
         >>> boxes = example["bboxes"]
@@ -1181,3 +1180,12 @@ class LiltForQuestionAnswering(LiltPreTrainedModel):
             hidden_states=outputs.hidden_states,
             attentions=outputs.attentions,
         )
+
+
+__all__ = [
+    "LiltForQuestionAnswering",
+    "LiltForSequenceClassification",
+    "LiltForTokenClassification",
+    "LiltModel",
+    "LiltPreTrainedModel",
+]
