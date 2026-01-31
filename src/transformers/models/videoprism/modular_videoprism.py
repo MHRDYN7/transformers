@@ -883,9 +883,7 @@ class VideoPrismMultiheadAttentionPoolingHead(nn.Module):
         self.dim = int(self.config.intermediate_size / self.config.num_attention_heads)
         self.per_dim_scale = nn.Parameter(torch.zeros(self.dim))
         r_softplus_0 = 1.442695041
-        scale = torch.tensor(r_softplus_0 / (self.dim**0.5), device=self.per_dim_scale.device)
-        softplus = nn.functional.softplus(self.per_dim_scale)
-        scale = scale * softplus
+        scale = torch.tensor(r_softplus_0 / (self.dim**0.5))
         self.register_buffer("scale", scale)
 
         self.pooling_attention_query = nn.Parameter(torch.zeros(1, 1, self.config.hidden_size))
@@ -907,7 +905,9 @@ class VideoPrismMultiheadAttentionPoolingHead(nn.Module):
         query_layer = (
             self.query(query).view(batch_size, -1, self.num_attention_heads, self.attention_head_size).transpose(1, 2)
         )
-        query_layer = query_layer * self.scale.expand(*query_layer.shape)
+        softplus = nn.functional.softplus(self.per_dim_scale)
+        scale = self.scale * softplus
+        query_layer = query_layer * scale.expand(*query_layer.shape)
 
         key_layer = (
             self.key(hidden_states)
