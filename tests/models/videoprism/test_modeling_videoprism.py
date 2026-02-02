@@ -51,7 +51,6 @@ if is_torch_available():
 
 if is_vision_available():
     from transformers import VideoPrismVideoProcessor
-    from transformers.video_utils import load_video
 
 if is_sentencepiece_available():
     from transformers import VideoPrismTokenizer
@@ -487,8 +486,7 @@ class VideoPrismForVideoClassificationModelTester(VideoPrismVisionModelTester):
         if vision_kwargs is None:
             vision_kwargs = {}
         super().__init__(parent, **vision_kwargs)
-        
-    
+
     # Copied from tests.models.vivit.test_modeling_vivit.VivitModelTester.prepare_config_and_inputs with Vivit->VideoPrism
     def prepare_config_and_inputs(self):
         pixel_values = floats_tensor(
@@ -511,7 +509,7 @@ class VideoPrismForVideoClassificationModelTester(VideoPrismVisionModelTester):
         label = torch.tensor([1], dtype=torch.long)
         labels = torch.stack((label, label), dim=0)
         labels.to(torch_device)
-        
+
         model.eval()
         with torch.no_grad():
             result = model(pixel_values, labels)
@@ -531,8 +529,11 @@ class VideoPrismForVideoClassificationTest(unittest.TestCase):
     Here we also overwrite some of the tests of test_modeling_common.py, as VideoPrismVisionModel does not use input_ids, inputs_embeds,
     attention_mask and seq_length.
     """
+
     def setUp(self):
-        self.model_tester = VideoPrismForVideoClassificationModelTester(self, vision_kwargs={"use_labels": True, "num_labels": 10})
+        self.model_tester = VideoPrismForVideoClassificationModelTester(
+            self, vision_kwargs={"use_labels": True, "num_labels": 10}
+        )
 
     def test_model(self):
         config_and_inputs = self.model_tester.prepare_config_and_inputs()
@@ -559,7 +560,7 @@ def prepare_video(video_type="water_bottle_drumming"):
         filename = "v_BasketballDunk_g14_c06.avi"
     else:
         raise "The `video_type` should be one of ['water_bottle_drumming', 'water_bottle_drumming_frames', 'basketball_dunk']."
-    
+
     file = api.hf_hub_download(repo_id="MHRDYN7/videoprism_assets", filename=filename, repo_type="dataset")
     if video_type == "water_bottle_drumming_frames":
         file = np.load(file)
@@ -664,7 +665,9 @@ class VideoPrismModelIntegrationTest(unittest.TestCase):
             "size": {"height": 144, "width": 144},
             "do_resize": True,
         }
-        inputs = processor(videos=prepare_video("water_bottle_drumming"), return_tensors="pt", **kwargs).to(torch_device)
+        inputs = processor(videos=prepare_video("water_bottle_drumming"), return_tensors="pt", **kwargs).to(
+            torch_device
+        )
         model.eval()
         with torch.inference_mode():
             outputs = model(**inputs, interpolate_pos_encoding=True)
@@ -683,17 +686,13 @@ class VideoPrismModelIntegrationTest(unittest.TestCase):
         model.eval()
         with torch.inference_mode():
             outputs = model(inputs, label)
-        
+
         expected_logits = torch.tensor(
             [
                 [
-                    [-18.5863, -12.8547,  -4.8901,  -8.7695,  15.0777,  15.0308,  -0.2944, 0.5263,  22.7533,   5.9714],
+                    [-18.5863, -12.8547, -4.8901, -8.7695, 15.0777, 15.0308, -0.2944, 0.5263, 22.7533, 5.9714],
                 ]
             ]
         )
         torch.testing.assert_close(outputs.logits, expected_logits, rtol=1e-4, atol=1e-4)
         torch.testing.assert_close(outputs.loss, torch.tensor(0.0009), rtol=1e-4, atol=1e-4)
-
-
-        
- 

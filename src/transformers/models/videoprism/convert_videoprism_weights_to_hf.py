@@ -7,7 +7,6 @@ import numpy as np
 import torch
 from huggingface_hub import hf_hub_download
 from safetensors.torch import load_file, save_file
-from torch import nn
 
 from transformers import (
     AutoModel,
