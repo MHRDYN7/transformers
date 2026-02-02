@@ -38,7 +38,7 @@ class VideoPrismVideoProcessor(BaseVideoProcessor):
     do_rescale = True
     do_normalize = False
     do_convert_rgb = True
-    do_sample_frames = False  # Set to False for BC, recommended to set `True` in new models
+    do_sample_frames = True
 
 
 __all__ = ["VideoPrismVideoProcessor"]

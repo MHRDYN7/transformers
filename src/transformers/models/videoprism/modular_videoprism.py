@@ -343,6 +343,7 @@ class VideoPrismVideoProcessor(LlavaOnevisionVideoProcessor):
 
     size = {"height": 288, "width": 288}
     do_normalize = False
+    do_sample_frames = True
 
 
 class VideoPrismProcessorKwargs(ProcessingKwargs, total=False):

@@ -320,8 +320,7 @@ def convert_params(flax_state_dict, model_name):
         dim = int(vision_config["intermediate_size"] / vision_config["num_attention_heads"])
         r_softplus_0 = 1.442695041
         scale = torch.tensor(r_softplus_0 / (dim**0.5))
-        softplus = nn.functional.softplus(new_state_dict["video_model.contrastive_vision_pooler.per_dim_scale"])
-        new_state_dict["video_model.contrastive_vision_pooler.scale"] = (scale * softplus).contiguous()
+        new_state_dict["video_model.contrastive_vision_pooler.scale"] = scale
 
     return new_state_dict
 
@@ -476,7 +475,7 @@ def main():
     parser = argparse.ArgumentParser()
     parser.add_argument(
         "--model_name",
-        default="backbone_base",
+        default="lvt_large",
         type=str,
         choices=ORIGINAL_CHECKPOINTS.keys(),
         help="Name of the model you'd like to convert.",
@@ -489,7 +488,7 @@ def main():
     )
     parser.add_argument(
         "--convert",
-        default=False,
+        default=True,
         type=bool,
         help="Whether to convert the original Flax checkpoint to Hugging Face format.",
     )
@@ -501,7 +500,7 @@ def main():
     )
     parser.add_argument(
         "--from_pretrained",
-        default=True,
+        default=False,
         type=bool,
         help="Whether to load the model weights from the Hugging Face hub. Loads local checkpoint (not in cache dir) if False.",
     )
@@ -525,7 +524,7 @@ def main():
     )
     parser.add_argument(
         "--upload",
-        default=False,
+        default=True,
         type=bool,
         help="Whether to upload the converted model to the Hugging Face hub.",
     )
