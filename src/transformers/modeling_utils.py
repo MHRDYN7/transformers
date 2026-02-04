@@ -1110,81 +1110,67 @@ class PreTrainedModel(nn.Module, EmbeddingAccessMixin, ModuleUtilsMixin, PushToH
         - **can_record_outputs** (dict):
     """
 
-    config_class = None
-    base_model_prefix = ""
-    main_input_name = "input_ids"
-    model_tags = None
-
-    _checkpoint_conversion_mapping = {}  # used for BC support in VLMs, not meant to be used by new models
-
+    # General model properties
+    config_class: type[PreTrainedConfig] | None = None
     _auto_class = None
-    _no_split_modules = None
-    _skip_keys_device_placement = None
+    base_model_prefix: str = ""
+    _is_stateful: bool = False
+    model_tags: list[str] | None = None
 
-    _keep_in_fp32_modules = None
-    # the _keep_in_fp32_modules will avoid casting to anything other than float32, except bfloat16
-    # to also prevent bfloat16 casting, use the _keep_in_fp32_modules_strict flag
-    _keep_in_fp32_modules_strict = None
+    # Input-related properties
+    main_input_name: str = "input_ids"
+    # Attributes used mainly in multimodal LLMs, though all models contain a valid field for these
+    # Possible values are: text, image, video, audio and time
+    input_modalities: str | list[str] = "text"
 
-    # a list of `re` patterns of `state_dict` keys that should be removed from the list of missing
-    # keys we find (keys inside the model but not in the checkpoint) and avoid unnecessary warnings.
-    _keys_to_ignore_on_load_missing = None
-    # a list of `re` patterns of `state_dict` keys that should be removed from the list of
-    # unexpected keys we find (keys inside the checkpoint but not the model) and avoid unnecessary
-    # warnings.
-    _keys_to_ignore_on_load_unexpected = None
-    # a list of `state_dict` keys to ignore when saving the model (useful for keys that aren't
-    # trained, but which are either deterministic or tied variables)
-    _keys_to_ignore_on_save = None
-    # a list of `state_dict` keys that are potentially tied to another key in the state_dict.
-    _tied_weights_keys = None
+    # Device-map related properties
+    _no_split_modules: set[str] | list[str] | None = None
+    _skip_keys_device_placement: str | list[str] | None = None
 
-    supports_gradient_checkpointing = False
-    _is_stateful = False
+    # Specific dtype upcasting
+    # `_keep_in_fp32_modules` will upcast to fp32 only if the requested dtype is fp16
+    # `_keep_in_fp32_modules_strict` will upcast to fp32 independently if the requested dtype is fp16 or bf16
+    _keep_in_fp32_modules: set[str] | list[str] | None = None
+    _keep_in_fp32_modules_strict: set[str] | list[str] | None = None
 
-    # Flash Attention support
-    _supports_flash_attn = False
+    # Loading-specific properties
+    # A dictionary `{"target": "source"}` of checkpoint keys that are potentially tied to one another
+    _tied_weights_keys: dict[str, str] = None
+    # Used for BC support in VLMs, not meant to be used by new models
+    _checkpoint_conversion_mapping: dict[str, str] = {}
+    # A list of `re` patterns describing keys to ignore if they are missing from checkpoints to avoid warnings
+    _keys_to_ignore_on_load_missing: list[str] | None = None
+    # A list of `re` patterns describing keys to ignore if they are unexpected in the checkpoints to avoid warnings
+    _keys_to_ignore_on_load_unexpected: list[str] | None = None
+    # A list of keys to ignore when saving the model
+    _keys_to_ignore_on_save: list[str] | None = None
 
-    # SDPA support
-    _supports_sdpa = False
+    # Attention interfaces support properties
+    _supports_sdpa: bool = False
+    _supports_flash_attn: bool = False
+    _supports_flex_attn: bool = False
 
-    # Flex Attention support
-    _supports_flex_attn = False
-
-    _can_compile_fullgraph = False
-
-    # A tensor parallel plan to be applied to the model when TP is enabled. For
-    # top-level models, this attribute is currently defined in respective model
-    # code. For base models, this attribute comes from
-    # `config.base_model_tp_plan` during `__init__`.
-    # It should identify the layers exactly: if you want to TP model.language_model.layers.fc1
-    # by passing `tp_plan` to the init, it should be {"model.language_model.layers.fc1":"colwise"}
-    # for example.
-    _tp_plan = None
-
-    # tensor parallel degree to which model is sharded to.
+    # Tensor-parallelism-related properties
+    # A tensor parallel plan of the form `{"model.layer.mlp.param": "colwise"}` to be applied to the model when TP is enabled.
+    # For top-level models, this attribute is currently defined in respective model code. For base models, this attribute comes
+    # from `config.base_model_tp_plan` during `post_init`.
+    _tp_plan: dict[str, str] = None
+    # Tensor parallel degree to which model is sharded to
     _tp_size = None
+    # A pipeline parallel plan specifying the layers which may not be present on all ranks when PP is enabled. For top-level
+    # models, this attribute is currently defined in respective model code. For base models, it comes from
+    # `config.base_model_pp_plan` during `post_init`.
+    _pp_plan: dict[str, PipelineParallel] | None = None
 
-    # A pipeline parallel plan specifying the layers which may not be present
-    # on all ranks when PP is enabled. For top-level models, this attribute is
-    # currently defined in respective model code. For base models, this
-    # attribute comes from `config.base_model_pp_plan` during `post_init`.
-    #
-    # The variable names for the inputs and outputs of the specified layers can
-    # be indexed using the `PipelineParallel` enum as follows:
-    # - `_pp_plan["layers"][PipelineParallel.inputs]`
-    # - `_pp_plan["layers"][PipelineParallel.outputs]`
-    _pp_plan = None
-
+    # Advanced functionalities support
+    supports_gradient_checkpointing: bool = False
+    _can_compile_fullgraph: bool = False
     # This flag signal that the model can be used as an efficient backend in TGI and vLLM
     # In practice, it means that they support attention (mask) interface functions, fully pass the kwargs
     # through all modules up to the Attention layer, can slice logits with Tensor, and have a default TP plan
-    _supports_attention_backend = False
-    _can_record_outputs = None
-
-    # Attributes used mainly in multimodal LLMs, though all models contain a valid field for these
-    # Possible values are: text, image, video, audio and time
-    input_modalities: str | list[str] = "text"  # most models are text
+    _supports_attention_backend: bool = False
+    # A mapping describing what outputs can be captured by `check_model_inputs` decorator during the forward pass
+    _can_record_outputs: dict | None = None
 
     @property
     @torch._dynamo.allow_in_graph
@@ -1269,6 +1255,7 @@ class PreTrainedModel(nn.Module, EmbeddingAccessMixin, ModuleUtilsMixin, PushToH
                 f"`model = {self.__class__.__name__}.from_pretrained(PRETRAINED_MODEL_NAME)`"
             )
         self.config = config
+        self.name_or_path = config.name_or_path
 
         # Check the attention implementation is supported, or set it if not yet set (on the internal attr, to avoid
         # setting it recursively)
@@ -1294,34 +1281,33 @@ class PreTrainedModel(nn.Module, EmbeddingAccessMixin, ModuleUtilsMixin, PushToH
                 loss_type = None
         self.loss_type = loss_type
 
-        self.name_or_path = config.name_or_path
-        self.warnings_issued = {}
-        # Overwrite the class attribute to make it an instance attribute, so models like
-        # `InstructBlipForConditionalGeneration` can dynamically update it without modifying the class attribute
-        # when a different component (e.g. language_model) is used. Same for `_tied_weights_keys` which pops/adds
-        # new keys dynamically depending on config values
-        self._keep_in_fp32_modules = copy.copy(self.__class__._keep_in_fp32_modules)
-        self._keep_in_fp32_modules_strict = copy.copy(self.__class__._keep_in_fp32_modules_strict)
-        self._tied_weights_keys = copy.copy(self.__class__._tied_weights_keys)
-
-        self._no_split_modules = self._no_split_modules or []
         _CAN_RECORD_REGISTRY[str(self.__class__)] = self._can_record_outputs  # added for executorch support only
 
     def post_init(self):
         """
         A method executed at the end of each Transformer model initialization, to execute code that needs the model's
         modules properly initialized (such as weight initialization).
+        It is also used to obtain all correct static properties (parallelism plans, tied_weights_keys, _keep_in_fp32_modules, etc)
+        correctly in the case of composite models (that is, the top level model should know about those properties from its children).
         """
         # Attach the different parallel plans and tied weight keys to the top-most model, so that everything is
         # easily available
         self._tp_plan, self._ep_plan, self._pp_plan = {}, {}, {}
-        # Current submodel should register its tied weights
-        self.all_tied_weights_keys = self.get_expanded_tied_weights_keys(all_submodels=False)
         # If current model is a base model, attach `base_model_tp_plan` and `base_model_pp_plan` from config
         if self.base_model is self:
             self._pp_plan = self.config.base_model_pp_plan.copy() if self.config.base_model_pp_plan is not None else {}
             self._tp_plan = self.config.base_model_tp_plan.copy() if self.config.base_model_tp_plan is not None else {}
             self._ep_plan = self.config.base_model_ep_plan.copy() if self.config.base_model_ep_plan is not None else {}
+        # Current submodel should register its tied weights
+        self.all_tied_weights_keys = self.get_expanded_tied_weights_keys(all_submodels=False)
+        # Current submodel should register its `_keep_in_fp32_modules`
+        self._keep_in_fp32_modules = set(self._keep_in_fp32_modules or [])
+        self._keep_in_fp32_modules_strict = set(self._keep_in_fp32_modules_strict or [])
+        # Current submodel must register its `_no_split_modules` as well
+        self._no_split_modules = set(self._no_split_modules or [])
+
+        # Iterate over children only: as the final model is created, this is enough to gather the properties from all submodels.
+        # This works because the way the `__init__` and `post_init` are called on all submodules is depth-first in the graph
         for name, module in self.named_children():
             # Parallel plans
             if plan := getattr(module, "_ep_plan", None):
@@ -1333,6 +1319,14 @@ class PreTrainedModel(nn.Module, EmbeddingAccessMixin, ModuleUtilsMixin, PushToH
             # Always attach the keys of the children (if the children's config says to NOT tie, then it's empty)
             if tied_keys := getattr(module, "all_tied_weights_keys", None):
                 self.all_tied_weights_keys.update({f"{name}.{k}": f"{name}.{v}" for k, v in tied_keys.copy().items()})
+            # Record keep_in_fp_32 modules from the children as well
+            if keep_fp32 := getattr(module, "_keep_in_fp32_modules", None):
+                self._keep_in_fp32_modules.update(keep_fp32)
+            if keep_fp32_strict := getattr(module, "_keep_in_fp32_modules_strict", None):
+                self._keep_in_fp32_modules_strict.update(keep_fp32_strict)
+            # Record `_no_split_modules` from the children
+            if no_split := getattr(module, "_no_split_modules", None):
+                self._no_split_modules.update(no_split)
 
         # Maybe initialize the weights and tie the keys
         self.init_weights()
@@ -1928,7 +1922,11 @@ class PreTrainedModel(nn.Module, EmbeddingAccessMixin, ModuleUtilsMixin, PushToH
         """Detect whether the class supports setting its attention implementation dynamically. It is an ugly check based on
         opening the file, but avoids maintaining yet another property flag.
         """
-        class_file = sys.modules[cls.__module__].__file__
+        class_module = sys.modules[cls.__module__]
+        # This can happen for a custom model in a jupyter notebook or repl for example - simply do not allow to set it then
+        if not hasattr(class_module, "__file__"):
+            return False
+        class_file = class_module.__file__
         with open(class_file, "r", encoding="utf-8") as f:
             code = f.read()
         # heuristic -> if we find those patterns, the model uses the correct interface
@@ -1943,7 +1941,11 @@ class PreTrainedModel(nn.Module, EmbeddingAccessMixin, ModuleUtilsMixin, PushToH
         """Detect whether the class supports setting its experts implementation dynamically. It is an ugly check based on
         opening the file, but avoids maintaining yet another property flag.
         """
-        class_file = sys.modules[cls.__module__].__file__
+        class_module = sys.modules[cls.__module__]
+        # This can happen for a custom model in a jupyter notebook or repl for example - simply do not allow to set it then
+        if not hasattr(class_module, "__file__"):
+            return False
+        class_file = class_module.__file__
         with open(class_file, "r", encoding="utf-8") as f:
             code = f.read()
         # heuristic -> if we the use_experts_implementation decorator is used, then we can set it
@@ -2550,35 +2552,6 @@ class PreTrainedModel(nn.Module, EmbeddingAccessMixin, ModuleUtilsMixin, PushToH
             )
         if hasattr(output_embeddings, "out_features") and hasattr(input_embeddings, "num_embeddings"):
             output_embeddings.out_features = input_embeddings.num_embeddings
-
-    def _get_no_split_modules(self, device_map: str):
-        """
-        Get the modules of the model that should not be spit when using device_map. We iterate through the modules to
-        get the underlying `_no_split_modules`.
-
-        Args:
-            device_map (`str`):
-                The device map value. Options are ["auto", "balanced", "balanced_low_0", "sequential"]
-
-        Returns:
-            `list[str]`: List of modules that should not be split
-        """
-        _no_split_modules = set()
-        modules_to_check = [self]
-        while len(modules_to_check) > 0:
-            module = modules_to_check.pop(-1)
-            # if the module does not appear in _no_split_modules, we also check the children
-            if module.__class__.__name__ not in _no_split_modules:
-                if isinstance(module, PreTrainedModel):
-                    if module._no_split_modules is None:
-                        raise ValueError(
-                            f"{module.__class__.__name__} does not support `device_map='{device_map}'`. To implement support, the model "
-                            "class needs to implement the `_no_split_modules` attribute."
-                        )
-                    else:
-                        _no_split_modules = _no_split_modules | set(module._no_split_modules)
-                modules_to_check += list(module.children())
-        return list(_no_split_modules)
 
     def resize_token_embeddings(
         self,
@@ -4728,7 +4701,7 @@ def caching_allocator_warmup(model: PreTrainedModel, expanded_device_map: dict, 
             ) - torch_accelerator_module.memory_allocated(index)
             byte_count = int(max(0, byte_count - unused_memory))
         # We divide by 2 here as we allocate in fp16
-        _ = torch.empty(byte_count // 2, dtype=torch.float16, device=device, requires_grad=False)
+        _ = torch.empty(int(byte_count // 2), dtype=torch.float16, device=device, requires_grad=False)
 
 
 class AttentionInterface(GeneralInterface):
