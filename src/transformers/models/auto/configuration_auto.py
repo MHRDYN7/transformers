@@ -293,6 +293,8 @@ CONFIG_MAPPING_NAMES = OrderedDict[str, str](
         ("modernbert", "ModernBertConfig"),
         ("modernbert-decoder", "ModernBertDecoderConfig"),
         ("moonshine", "MoonshineConfig"),
+        ("moonshine_streaming", "MoonshineStreamingConfig"),
+        ("moonshine_streaming_encoder", "MoonshineStreamingEncoderConfig"),
         ("moshi", "MoshiConfig"),
         ("mpnet", "MPNetConfig"),
         ("mpt", "MptConfig"),
@@ -445,6 +447,7 @@ CONFIG_MAPPING_NAMES = OrderedDict[str, str](
         ("univnet", "UnivNetConfig"),
         ("upernet", "UperNetConfig"),
         ("vaultgemma", "VaultGemmaConfig"),
+        ("vibevoice_acoustic_tokenizer", "VibeVoiceAcousticTokenizerConfig"),
         ("video_llama_3", "VideoLlama3Config"),
         ("video_llama_3_vision", "VideoLlama3VisionConfig"),
         ("video_llava", "VideoLlavaConfig"),
@@ -777,6 +780,8 @@ MODEL_NAMES_MAPPING = OrderedDict[str, str](
         ("modernbert", "ModernBERT"),
         ("modernbert-decoder", "ModernBertDecoder"),
         ("moonshine", "Moonshine"),
+        ("moonshine_streaming", "MoonshineStreaming"),
+        ("moonshine_streaming_encoder", "MoonshineStreamingEncoder"),
         ("moshi", "Moshi"),
         ("mpnet", "MPNet"),
         ("mpt", "MPT"),
@@ -935,6 +940,7 @@ MODEL_NAMES_MAPPING = OrderedDict[str, str](
         ("univnet", "UnivNet"),
         ("upernet", "UPerNet"),
         ("vaultgemma", "VaultGemma"),
+        ("vibevoice_acoustic_tokenizer", "VibeVoiceAcousticTokenizer"),
         ("video_llama_3", "VideoLlama3"),
         ("video_llama_3_vision", "VideoLlama3Vision"),
         ("video_llava", "VideoLlava"),
@@ -1024,6 +1030,7 @@ SPECIAL_MODEL_TYPE_TO_MODULE_NAME = OrderedDict[str, str](
         ("glm_ocr_text", "glm_ocr"),
         ("glmasr_encoder", "glmasr"),
         ("grounding-dino", "grounding_dino"),
+        ("moonshine_streaming_encoder", "moonshine_streaming"),
         ("mm-grounding-dino", "mm_grounding_dino"),
         ("idefics3_vision", "idefics3"),
         ("mgp-str", "mgp_str"),
@@ -1419,17 +1426,10 @@ class AutoConfig:
                     "`pip install git+https://github.com/huggingface/transformers.git`"
                 )
             return config_class.from_dict(config_dict, **unused_kwargs)
-        else:
-            # Fallback: use pattern matching on the string.
-            # We go from longer names to shorter names to catch roberta before bert (for instance)
-            for pattern in sorted(CONFIG_MAPPING.keys(), key=len, reverse=True):
-                if pattern in str(pretrained_model_name_or_path):
-                    return CONFIG_MAPPING[pattern].from_dict(config_dict, **unused_kwargs)
 
         raise ValueError(
             f"Unrecognized model in {pretrained_model_name_or_path}. "
-            f"Should have a `model_type` key in its {CONFIG_NAME}, or contain one of the following strings "
-            f"in its name: {', '.join(CONFIG_MAPPING.keys())}"
+            f"Should have a `model_type` key in its {CONFIG_NAME}."
         )
 
     @staticmethod
