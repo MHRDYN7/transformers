@@ -34,7 +34,7 @@ class VideoPrismVisionConfig(VivitConfig):
     This is the configuration class to store the configuration of a [`VideoPrismVisionModel`]. It is used to instantiate a
     VideoPrism vision encoder according to the specified arguments, defining the model architecture. Instantiating a
     configuration with the defaults will yield a similar configuration to that of the VideoPrism
-    [google/videoprism](https://huggingface.co/google/videoprism) architecture.
+    [google/videoprism-base-f16r288](https://huggingface.co/google/videoprism-base-f16r288) architecture.
 
     Configuration objects inherit from [`PretrainedConfig`] and can be used to control the model outputs. Read the
     documentation from [`PretrainedConfig`] for more information.
@@ -146,7 +146,7 @@ class VideoPrismTextConfig(PreTrainedConfig):
     This is the configuration class to store the configuration of a [`VideoPrismTextModel`]. It is used to instantiate a
     VideoPrism text encoder according to the specified arguments, defining the model architecture. Instantiating a
     configuration with the defaults will yield a similar configuration to that of the VideoPrism
-    [google/videoprism](https://huggingface.co/google/videoprism) architecture.
+    [google/videoprism-base-f16r288](https://huggingface.co/google/videoprism-base-f16r288) architecture.
 
     Configuration objects inherit from [`PreTrainedConfig`] and can be used to control the model outputs. Read the
     documentation from [`PreTrainedConfig`] for more information.
@@ -236,7 +236,7 @@ class VideoPrismConfig(SiglipConfig):
     This is the configuration class to store the configuration of a [`VideoPrismModel`]. It is used to instantiate a
     VideoPrism model according to the specified arguments, defining the model architecture. Instantiating a
     configuration with the defaults will yield a similar configuration to that of the VideoPrism
-    [google/videoprism](https://huggingface.co/google/videoprism) architecture.
+    [google/videoprism-base-f16r288](https://huggingface.co/google/videoprism-base-f16r288) architecture.
 
     Configuration objects inherit from [`PretrainedConfig`] and can be used to control the model outputs. Read the
     documentation from [`PretrainedConfig`] for more information.
@@ -296,7 +296,7 @@ class VideoPrismTokenizer(T5Tokenizer):
     ```python
     >>> from transformers import VideoPrismTokenizer
 
-    >>> tokenizer = VideoPrismTokenizer.from_pretrained("google/videoprism")
+    >>> tokenizer = VideoPrismTokenizer.from_pretrained("google/videoprism-base-f16r288")
     >>> encoded = tokenizer("Hello, my dog is cute", return_tensors="pt")
     >>> print(encoded)
     ```"""
@@ -834,8 +834,8 @@ class VideoPrismVisionModel(VideoPrismPreTrainedModel):
         >>> from transformers import VideoPrismVideoProcessor, VideoPrismVisionModel
         >>> import torch
 
-        >>> processor = VideoPrismVideoProcessor.from_pretrained("google/videoprism")
-        >>> model = VideoPrismVisionModel.from_pretrained("google/videoprism")
+        >>> processor = VideoPrismVideoProcessor.from_pretrained("google/videoprism-base-f16r288")
+        >>> model = VideoPrismVisionModel.from_pretrained("google/videoprism-base-f16r288")
 
         >>> video = "sample_video.mp4"
         >>> inputs = processor(videos=video)
@@ -1107,8 +1107,8 @@ class VideoPrismClipModel(VideoPrismPreTrainedModel):
         >>> from transformers import VideoPrismProcessor, VideoPrismClipModel
         >>> import torch
 
-        >>> processor = VideoPrismProcessor.from_pretrained("google/videoprism")
-        >>> model = VideoPrismClipModel.from_pretrained("google/videoprism")
+        >>> processor = VideoPrismProcessor.from_pretrained("google/videoprism-base-f16r288")
+        >>> model = VideoPrismClipModel.from_pretrained("google/videoprism-base-f16r288")
 
         >>> video = "sample_video.mp4"
         >>> texts = ["a dog", "a cat"]
@@ -1190,8 +1190,8 @@ class VideoPrismForVideoClassification(VideoPrismPreTrainedModel):
         >>> from transformers import VideoPrismVideoProcessor, VideoPrismForVideoClassification
         >>> import torch
 
-        >>> processor = VideoPrismVideoProcessor("google/videoprism")
-        >>> model = VideoPrismForVideoClassification.from_pretrained("google/videoprism", num_labels=1000)
+        >>> processor = VideoPrismVideoProcessor("google/videoprism-base-f16r288")
+        >>> model = VideoPrismForVideoClassification.from_pretrained("google/videoprism-base-f16r288", num_labels=1000)
 
         >>> video = "sample_video.mp4"
         >>> inputs = processor(videos=video, return_tensors="pt")

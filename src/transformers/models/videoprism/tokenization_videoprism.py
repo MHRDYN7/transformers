@@ -43,7 +43,7 @@ class VideoPrismTokenizer(TokenizersBackend):
     ```python
     >>> from transformers import VideoPrismTokenizer
 
-    >>> tokenizer = VideoPrismTokenizer.from_pretrained("google/videoprism")
+    >>> tokenizer = VideoPrismTokenizer.from_pretrained("google/videoprism-base-f16r288")
     >>> encoded = tokenizer("Hello, my dog is cute", return_tensors="pt")
     >>> print(encoded)
     ```"""

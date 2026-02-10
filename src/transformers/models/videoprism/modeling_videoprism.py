@@ -576,8 +576,8 @@ class VideoPrismVisionModel(VideoPrismPreTrainedModel):
         >>> from transformers import VideoPrismVideoProcessor, VideoPrismVisionModel
         >>> import torch
 
-        >>> processor = VideoPrismVideoProcessor.from_pretrained("google/videoprism")
-        >>> model = VideoPrismVisionModel.from_pretrained("google/videoprism")
+        >>> processor = VideoPrismVideoProcessor.from_pretrained("google/videoprism-base-f16r288")
+        >>> model = VideoPrismVisionModel.from_pretrained("google/videoprism-base-f16r288")
 
         >>> video = "sample_video.mp4"
         >>> inputs = processor(videos=video)
@@ -855,8 +855,8 @@ class VideoPrismClipModel(VideoPrismPreTrainedModel):
         >>> from transformers import VideoPrismProcessor, VideoPrismClipModel
         >>> import torch
 
-        >>> processor = VideoPrismProcessor.from_pretrained("google/videoprism")
-        >>> model = VideoPrismClipModel.from_pretrained("google/videoprism")
+        >>> processor = VideoPrismProcessor.from_pretrained("google/videoprism-base-f16r288")
+        >>> model = VideoPrismClipModel.from_pretrained("google/videoprism-base-f16r288")
 
         >>> video = "sample_video.mp4"
         >>> texts = ["a dog", "a cat"]
@@ -938,8 +938,8 @@ class VideoPrismForVideoClassification(VideoPrismPreTrainedModel):
         >>> from transformers import VideoPrismVideoProcessor, VideoPrismForVideoClassification
         >>> import torch
 
-        >>> processor = VideoPrismVideoProcessor("google/videoprism")
-        >>> model = VideoPrismForVideoClassification.from_pretrained("google/videoprism", num_labels=1000)
+        >>> processor = VideoPrismVideoProcessor("google/videoprism-base-f16r288")
+        >>> model = VideoPrismForVideoClassification.from_pretrained("google/videoprism-base-f16r288", num_labels=1000)
 
         >>> video = "sample_video.mp4"
         >>> inputs = processor(videos=video, return_tensors="pt")
