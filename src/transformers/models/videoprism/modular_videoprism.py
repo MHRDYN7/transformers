@@ -15,7 +15,6 @@ from ...utils import ModelOutput, TransformersKwargs, auto_docstring, logging, t
 from ..llava_onevision.video_processing_llava_onevision import LlavaOnevisionVideoProcessor
 from ..qwen3_next.modeling_qwen3_next import l2norm
 from ..siglip.configuration_siglip import SiglipConfig
-from ..siglip.modeling_siglip import lecun_normal_
 from ..t5.tokenization_t5 import T5Tokenizer
 from ..vivit.configuration_vivit import VivitConfig
 from ..vivit.modeling_vivit import (
@@ -785,7 +784,7 @@ class VideoPrismPreTrainedModel(PreTrainedModel):
 
     def _init_weights(self, module):
         if isinstance(module, (nn.Linear, nn.Conv3d)):
-            lecun_normal_(module.weight)
+            init.lecun_normal_(module.weight)
             init.zeros_(module.bias)
 
         elif isinstance(module, nn.LayerNorm):
